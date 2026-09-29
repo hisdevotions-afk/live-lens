@@ -80,4 +80,48 @@ assert.equal(resolve('Resolva 2x + 3 = 7', '').lines[0], '2x + 3 = 7 → x = 2')
 assert.equal(resolve('Se a = 5, o que acontece?', ''), null);                     // não pede para resolver
 assert.equal(resolve('Receita = 100. Qual o valor?', ''), null);
 
+
+// ---- propriedades de números inteiros (divisibilidade, paridade, primo, comparações) ----
+const QN = 'Um número inteiro positivo n é divisível por 6?';
+const OPTS = `Alternativas padrão GMAT:
+A) A afirmação (1) sozinha é suficiente, mas (2) sozinha não é.
+B) A afirmação (2) sozinha é suficiente, mas (1) sozinha não é.
+C) As duas afirmações juntas são suficientes, mas nenhuma sozinha é suficiente.
+D) Cada afirmação sozinha é suficiente.
+E) Mesmo juntas, as afirmações não são suficientes.`;
+const n1 = resolve(QN, `(1) n é divisível por 3.\n(2) n é par.\n${OPTS}`);   // o caso reportado
+assert.equal(n1.letter, 'C');
+assert.equal(n1.complete, true);
+assert.deepEqual(n1.lines, [
+  'Domínio: inteiros positivos (verificado de 1 a 5000).',
+  '(1) n é divisível por 3 → insuficiente (n = 3: não; n = 6: sim)',
+  '(2) n é par → insuficiente (n = 2: não; n = 6: sim)',
+  'Juntas: n é divisível por 3 e n é par → sempre sim → suficiente',
+  'Resposta: C — As duas afirmações juntas são suficientes, mas nenhuma sozinha é suficiente.',
+]);
+assert.equal(resolve(QN, '(1) n é divisível por 3\n(2) n é ímpar').letter, 'B');          // ímpar ⇒ nunca divisível por 6
+assert.equal(resolve(QN, '(1) n é múltiplo de 12\n(2) n é par').letter, 'A');
+assert.equal(resolve(QN, '(1) n é divisível por 12\n(2) n é múltiplo de 18').letter, 'D');
+assert.equal(resolve(QN, '(1) n é par\n(2) n é maior que 10').letter, 'E');
+assert.equal(resolve('Se n é um inteiro positivo, qual é o valor de n?', '(1) n^2 = 9\n(2) n > 2').letter, 'A'); // no domínio inteiro positivo, n² = 9 ⇒ n = 3
+assert.equal(resolve('Se x é um inteiro, qual é o valor de x?', '(1) x^2 = 9\n(2) x > 0').letter, 'C');
+assert.equal(resolve('Um inteiro positivo p é primo?', '(1) p é par\n(2) p > 2').letter, 'C');   // par e > 2 ⇒ nunca primo
+assert.equal(resolve('Um inteiro positivo n é par?', '(1) n é divisível por 4\n(2) n = 7').letter, 'D');
+assert.match(resolve('Se x é um inteiro, qual é o valor de x?', '(1) x^2 = 9\n(2) x > 0').lines.join('|'), /x = 3/);
+// não entende tudo → null (o LLM assume, nunca uma resposta confiante errada)
+assert.equal(resolve(QN, '(1) n é um quadrado perfeito\n(2) n é par'), null);
+assert.equal(resolve(QN, '(1) n é divisível por 3 ou por 5\n(2) n é par'), null);
+assert.equal(resolve('Um número positivo n é divisível por 6?', '(1) n é divisível por 3\n(2) n é par'), null);  // "positivo" sem "inteiro": domínio real
+assert.equal(resolve('Um número natural n é par?', '(1) n é divisível por 4\n(2) n = 7'), null);                // "natural" é ambíguo (0?)
+// as letras vêm das alternativas da própria página (mesmo embaralhadas)
+const shuffled = `(1) n é divisível por 3\n(2) n é par\nA) Cada afirmação sozinha é suficiente.\nB) Mesmo juntas, as afirmações não são suficientes.\nC) As duas afirmações juntas são suficientes, mas nenhuma sozinha é suficiente.\nD) A afirmação (1) sozinha é suficiente, mas (2) sozinha não é.\nE) A afirmação (2) sozinha é suficiente, mas (1) sozinha não é.`;
+assert.equal(resolve(QN, shuffled).letter, 'C');
+assert.equal(resolve(QN, shuffled.replace('C) As duas', 'X) As duas').replace('D) A afirmação (1)', 'C) A afirmação (1)')).letter, 'C'); // alternativas incompletas: convenção padrão
+const shuf2 = `(1) n é divisível por 12\n(2) n é par\nA) Cada afirmação sozinha é suficiente.\nB) Mesmo juntas, as afirmações não são suficientes.\nC) As duas afirmações juntas são suficientes, mas nenhuma sozinha é suficiente.\nD) A afirmação (1) sozinha é suficiente, mas (2) sozinha não é.\nE) A afirmação (2) sozinha é suficiente, mas (1) sozinha não é.`;
+const s2 = resolve(QN, shuf2);
+assert.equal(s2.letter, 'D');                                                    // (1) sozinha basta ⇒ a página chama isso de D
+assert.ok(s2.lines.at(-1).startsWith('Resposta: D — A afirmação (1) sozinha é suficiente'), s2.lines.at(-1));
+// a linha "Alternativas..." não contamina a afirmação (2)
+assert.equal(resolve('Se x é um número real, qual é o valor de x?', '(1) 3x - 9 = 0\n(2) x^2 = 9\nAlternativas padrão GMAT:\nA) A afirmação (1) sozinha é suficiente, mas (2) sozinha não é.').letter, 'A');
+
 console.log('OK: todos os testes de algebra.js passaram');

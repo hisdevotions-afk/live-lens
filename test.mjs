@@ -191,4 +191,13 @@ assert.equal(splitQuestion('Ana Recife 10 Bruno Natal 20'), null);
 assert.equal(cleanMath('Como \\(3x = 9\\), temos \\[ x = \\frac{9}{3} \\] e x = \\pm 3.'), 'Como 3x = 9, temos x = (9)/(3) e x = ± 3.');
 assert.equal(cleanMath('\\[\n3x = 9 \\\\\nx = 3\n\\]'), '3x = 9\nx = 3');
 assert.equal(cleanMath('\\text{Portanto } x = 3'), 'Portanto x = 3');
+
+// variações reais de seleção: numeração antes, alternativas coladas no "?", URL não é pergunta
+assert.deepEqual(splitQuestion('1. Se x é um número real, qual é o valor de x?(1) 3x - 9 = 0 (2) x^2 = 9'),
+  { question: 'Se x é um número real, qual é o valor de x?', rest: '1. (1) 3x - 9 = 0 (2) x^2 = 9' });
+assert.deepEqual(splitQuestion('Qual é x?A) 3 B) 9'), { question: 'Qual é x?', rest: 'A) 3 B) 9' });
+assert.deepEqual(splitQuestion('Questão 1\nSe x é real, qual é x?(1) 3x - 9 = 0 (2) x^2 = 9'),
+  { question: 'Se x é real, qual é x?', rest: 'Questão 1\n(1) 3x - 9 = 0 (2) x^2 = 9' });
+assert.equal(splitQuestion('veja x.com/?id=1 e 10'), null);
+assert.equal(splitQuestion('abrir ?ID=5&x=1 agora'), null);
 console.log('OK: todos os testes de stats.js passaram');

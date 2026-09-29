@@ -41,6 +41,7 @@
   .top { display: flex; align-items: center; gap: 6px; }
   .brand { display: flex; align-items: center; gap: 8px; margin-right: auto; font-weight: 650; letter-spacing: -.01em; }
   .brand svg { color: var(--accent); width: 18px; height: 18px; }
+  .ver { font-weight: 400; font-size: .6875rem; color: var(--muted); letter-spacing: 0; }
   .pinbar { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .pinbar > svg { color: var(--muted); }
   #unpin:disabled { display: none; }
@@ -51,6 +52,10 @@
   #settings[hidden] { display: none; }
   #settings label { color: var(--muted); font-size: .75rem; }
   #settings small { color: var(--muted); font-size: .75rem; }
+  #diag summary { cursor: pointer; color: var(--muted); font-size: .75rem; padding: 4px 0; }
+  #diag p { margin: 2px 0 6px; color: var(--muted); font-size: .75rem; }
+  #debug { margin: 0 0 6px; padding: 8px; max-height: 40vh; overflow: auto; border-radius: 8px; background: var(--surface-2); font: 400 .75rem/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #debug:empty::before { content: "Nada capturado ainda."; color: var(--muted); }
 
   /* ---------- Controles ---------- */
   button, input {
@@ -77,6 +82,7 @@
 
   /* ---------- Conteúdo ---------- */
   main { overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 16px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+  main > * { flex-shrink: 0; } /* sem isso, o card do resultado (overflow:hidden) encolhe e corta o conteúdo em vez de rolar */
   main[data-empty="true"] > :not(#empty) { display: none; }
   main[data-empty="false"] > #empty { display: none; }
   #origin { order: -3; display: flex; gap: 8px; align-items: baseline; min-width: 0; color: var(--muted); font-size: .75rem; }
@@ -161,7 +167,7 @@
 <body data-pinned="false">
   <header>
     <div class="top">
-      <div class="brand"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>Live Lens</div>
+      <div class="brand"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>Live Lens<span id="ver" class="ver"></span></div>
       <button id="pause" aria-pressed="false" title="Pausa só a análise do LLM; as estatísticas continuam"><svg class="i pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><svg class="i play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg><span id="pause-label">Pausar LLM</span></button>
       <button id="gear" class="icon ghost" aria-label="Configurações" aria-expanded="false" aria-controls="settings" title="Configurações"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button>
     </div>
@@ -175,6 +181,12 @@
       <label for="model">Modelo do Ollama</label>
       <input id="model" autocomplete="off" spellcheck="false">
       <small>Precisa estar baixado: <code>ollama pull &lt;modelo&gt;</code></small>
+      <details id="diag">
+        <summary>Diagnóstico</summary>
+        <p>O texto exato que a extensão recebeu e como o interpretou. Se algo não for reconhecido, copie e envie.</p>
+        <pre id="debug"></pre>
+        <button id="copy-debug" type="button" class="ghost">Copiar diagnóstico</button>
+      </details>
     </div>
   </header>
 

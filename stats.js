@@ -223,8 +223,8 @@ export function calc(text, locale = 'pt') {
 }
 
 const ENDS_Q = /\?["'”)\]]*$/;
-// "?" que fecha uma pergunta: seguido de espaço, "(" ou fim; "?q=1" (URL) não conta.
-const Q_MARK = /^([\s\S]*?\?["'”)\]]*)(?=\s|\(|$)([\s\S]*)$/;
+// "?" que fecha uma pergunta, com ou sem espaço depois ("x?(1)", "x?A)"); "?id=1" (URL) não conta.
+const Q_MARK = /^([\s\S]*?\?["'”)\]]*)(?![\w.%-]+=)([\s\S]*)$/;
 
 // Limpa LaTeX colado como texto (\( \) \[ \] \times \frac...). Sem marcas de LaTeX, devolve o texto intacto.
 export function cleanMath(text) {

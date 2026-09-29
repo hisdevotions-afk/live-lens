@@ -51,6 +51,12 @@ sudo systemctl restart ollama
   - Fixar outro elemento ou selecionar um texto comum volta ao modo análise.
 - **Modelo:** abra as configurações (ícone de controles no canto superior direito do painel) e troque o "Modelo do Ollama" (precisa de `ollama pull <modelo>` antes).
 
+## Atualizar a extensão e diagnosticar
+
+- Depois de atualizar os arquivos, abra `chrome://extensions` e clique no ícone de **recarregar** (seta circular) no card do Live Lens; depois recarregue as abas abertas. Sem isso o Chrome continua rodando a versão antiga.
+- A **versão** aparece ao lado do nome, no topo do painel (ex.: `v0.3.0`). Se ela não bate com a do `manifest.json`, a extensão não foi recarregada.
+- Se algo não for reconhecido, abra as configurações (ícone de controles) → **Diagnóstico**: ele mostra o texto exato que a extensão recebeu e como o interpretou (modo, pergunta, dados). O botão **Copiar diagnóstico** ajuda a reportar o caso.
+
 ## Limitações conhecidas
 
 - **Injeção de prompt.** Os modelos locais pequenos seguem ordens escondidas no texto que você seleciona (testado: `qwen2.5:3b` obedece em parte, `qwen2.5:7b` obedece por completo, e um modelo maior não resolveu). O painel só mostra texto, sem ações, mas a análise pode ser enganada. Use em páginas em que você confia e trate a análise como sugestão; **as estatísticas são calculadas em código e não sofrem disso**.

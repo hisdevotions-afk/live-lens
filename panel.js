@@ -29,9 +29,12 @@ const state = {
   paused: false,
   raw: '',            // texto bruto da resposta do LLM (renderizado por renderAnalysis)
   copyText: '',       // comando do erro atual, para o botão Copiar
+  debug: null,        // o que a última seleção/pergunta foi (aba Diagnóstico das configurações)
   model: DEFAULT_MODEL,
 };
 
+const VERSION = chrome.runtime.getManifest?.().version ?? '';
+$('ver').textContent = VERSION ? `v${VERSION}` : '';
 const myWindowId = (await chrome.windows.getCurrent()).id;
 
 // ---------- Modelo ----------
@@ -127,6 +130,11 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
 // ---------- Snapshot → stats → LLM ----------
 
+function setDebug(info) {
+  state.debug = { ...info, versao: VERSION };
+  $('debug').textContent = JSON.stringify(state.debug, null, 2);
+}
+
 // dados: snapshot que veio junto com a pergunta (ou null: usa o elemento fixado, se houver, ou nada).
 function newAnswer(question, data, lang = '') {
   return {
@@ -142,6 +150,7 @@ function newTypedAnswer(question) {
   const cur = state.current;
   const data = state.answer ? state.answer.data : cur?.source === 'selection' ? cur : null;
   state.answer = newAnswer(question, data, cur?.lang);
+  setDebug({ modo: 'pergunta digitada', pergunta: question, dados: data ? data.text : cur?.source === 'pin' ? '(elemento fixado)' : null });
   state.summary = data ? (state.answer.dataSummary) : state.pinSummary;
   renderCalc();
   renderOrigin();
@@ -150,6 +159,7 @@ function newTypedAnswer(question) {
 
 function onSnapshot(snap) {
   if (snap.source === 'selection') {
+    const textoOriginal = snap.text;
     snap = { ...snap, text: cleanMath(snap.text) }; // LaTeX colado como texto vira símbolos legíveis
     state.current = snap;
     const sq = splitQuestion(snap.text);
@@ -161,6 +171,7 @@ function onSnapshot(snap) {
       state.answer = null;
       state.summary = summarize(snap);
     }
+    setDebug({ modo: sq ? 'pergunta' : 'análise', textoOriginal, textoLimpo: snap.text, pergunta: sq?.question ?? null, dados: sq ? sq.rest : null, tabela: !!snap.table });
     renderCalc();
     renderOrigin();
     renderStats();
@@ -363,6 +374,16 @@ $('gear').addEventListener('click', () => {
   $('settings').hidden = !open;
   $('gear').setAttribute('aria-expanded', String(open));
   if (open) $('model').focus();
+});
+
+$('copy-debug').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('debug').textContent);
+    $('copy-debug').textContent = 'Copiado!';
+    setTimeout(() => ($('copy-debug').textContent = 'Copiar diagnóstico'), 1500);
+  } catch {
+    // sem permissão de área de transferência: o texto continua visível para copiar à mão
+  }
 });
 
 $('copy').addEventListener('click', async () => {

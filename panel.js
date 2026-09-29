@@ -33,6 +33,7 @@ const state = {
   debug: null,        // o que a última seleção/pergunta foi (aba Diagnóstico das configurações)
   hint: false,        // seleção de suficiência de dados sem enunciado em lugar nenhum
   contextUsed: false, // o enunciado veio do bloco acima da seleção, não da seleção
+  warn: false,        // suficiência de dados que o código não resolveu: a resposta do LLM não é confiável
   model: DEFAULT_MODEL,
 };
 
@@ -121,6 +122,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       state.current = null; // pin novo retoma a tela (uma seleção deixa de ter prioridade)
       state.answer = null;
       state.hint = false;
+      state.warn = false;
       renderHint();
       renderCalc();
     }
@@ -142,13 +144,15 @@ function setDebug(info) {
 
 // dados: snapshot que veio junto com a pergunta (ou null: usa o elemento fixado, se houver, ou nada).
 function newAnswer(question, data, lang = '') {
-  return {
+  const a = {
     question,
     calc: calc(question, state.pinLocale ?? detectLocale(question, lang)),
     data,
     dataSummary: data ? (looksLikeMath(data.text) || isDataSufficiencyShape(data.text) ? { locale: 'pt', groups: [], primary: null } : summarize(data)) : null,
     resolution: resolve(question, data ? data.text : ''), // equações e suficiência de dados resolvidas em código
   };
+  state.warn = !a.resolution?.complete && !!data && isDataSufficiencyShape(data.text);
+  return a;
 }
 
 // Pergunta digitada: usa como dados a seleção atual (ou os dados da pergunta anterior); senão, o elemento fixado; senão, nada.
@@ -184,6 +188,7 @@ function onSnapshot(snap) {
     }
     state.hint = !sq && isDataSufficiencyShape(snap.text);
     state.contextUsed = !!contexto;
+    state.warn = false;
     state.current = snap;
     if (sq) {
       // Pergunta (com ou sem dados na mesma seleção): o cálculo sai na hora, em código.
@@ -206,6 +211,7 @@ function onSnapshot(snap) {
       resolucao: state.answer?.resolution?.lines,
       contexto: contexto ?? undefined, // bloco acima da seleção usado como enunciado
       semEnunciado: state.hint || undefined,
+      naoResolvido: state.warn || undefined,
     });
     renderCalc();
     renderHint();
@@ -490,12 +496,18 @@ const METRICS = [['sum', 'soma'], ['mean', 'média'], ['median', 'mediana'], ['m
 
 function renderHint() {
   const box = $('hint');
-  box.hidden = !state.hint;
+  const on = state.hint || state.warn;
+  box.hidden = !on;
+  box.dataset.kind = state.hint ? 'missing' : 'warn';
   box.replaceChildren();
+  if (!on) return;
+  const b = document.createElement('b');
   if (state.hint) {
-    const b = document.createElement('b');
     b.textContent = 'Falta o enunciado.';
     box.append(b, 'Isto parece um problema de suficiência de dados, mas a seleção não inclui a pergunta (e não achei uma no texto logo acima). Selecione também a linha da pergunta, acima de "(1)".');
+  } else {
+    b.textContent = 'Não consegui resolver em código.';
+    box.append(b, 'Só entendo equações e propriedades de inteiros (divisibilidade, paridade, primo, divisores…). A resposta do LLM abaixo não é confiável em suficiência de dados: confira o raciocínio antes de aceitar a alternativa.');
   }
 }
 

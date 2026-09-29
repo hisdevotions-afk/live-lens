@@ -116,4 +116,7 @@ assert.doesNotMatch(buildMessages({ snapshot: null, summary: null, question: 'Qu
 // a alternativa vai no fim da explicação
 assert.match(ans[0].content, /Se os DADOS trouxerem alternativas \(A, B, C…\), termine com uma última linha "Alternativa: X"/);
 assert.match(ans[0].content, /Se a RESOLUÇÃO tiver "Resposta: X", a última linha deve ser "Alternativa: X"/);
+
+// suficiência de dados sem resolução em código: o modelo não pode alegar que "faltam dados"
+assert.match(ans[0].content, /Em problemas de suficiência de dados, as afirmações \(1\) e \(2\) são os dados: avalie cada uma e nunca diga que faltam dados/);
 console.log('OK: todos os testes de llm.js passaram');

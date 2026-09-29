@@ -17,7 +17,7 @@ Extensão do Chrome que mostra análise de dados **em tempo real** num painel la
 2. Selecionar texto qualquer produz uma análise do LLM em streaming no painel, em português.
 3. Fixar um elemento que muda sozinho (KPI de dashboard) atualiza as stats a cada mudança, mostra delta e sparkline, e reanalisa com o LLM no máximo a cada 15s.
 4. Com o Ollama desligado as stats continuam funcionando, e o painel mostra como ligar o Ollama.
-5. `node test.mjs` passa.
+5. `node test.mjs && node test-llm.mjs` passa.
 
 ### Fora de escopo
 
@@ -47,7 +47,8 @@ live-lens/
   panel.html      HTML + CSS do side panel
   panel.js        lógica do painel: recebe snapshots, mostra stats, chama LLM (ES module)
   test.mjs        testes do stats.js com node:assert
-  demo.html       página de teste manual com tabela e KPI que mudam a cada 2s
+  test-llm.mjs    testes do llm.js com fetch simulado
+  demo.html       página de teste manual: tabela e KPI que mudam a cada 2s, botão "Recriar KPI"
   README.md       instalação e uso
 ```
 
@@ -88,7 +89,10 @@ Todas as mensagens são objetos simples enviados com `chrome.runtime.sendMessage
 ```js
 { type: 'start-pick' }   // entra no modo de escolher elemento
 { type: 'unpin' }        // solta o elemento fixado
+{ type: 'get-state' }    // só consulta
 ```
+
+O content script responde **toda** mensagem acima com `{ pinned: boolean, label: string }`. O painel chama `get-state` ao abrir e ao trocar de aba, para mostrar o estado correto do elemento fixado.
 
 Regras:
 - O painel **ignora** snapshots de abas que não estão ativas (`sender.tab.active !== true`).
@@ -272,16 +276,19 @@ Estado do painel: `current` (último snapshot), `lastLlmAt` (timestamp), `lastLl
 
 ## 11. Testes
 
+- `node test-llm.mjs`: `buildMessages` (origem, arredondamento, truncamento, pergunta padrão) e `analyze` com `fetch` simulado (NDJSON cortado no meio de uma linha, 403/404/500, rede fora, abort, linha `{"error":...}`).
 - `node test.mjs`: asserts em `stats.js` (parse pt/en, moeda, %, sufixos, negativos, parênteses, datas ignoradas, describe, outliers, tableColumns com e sem cabeçalho, summarize/primary, delta, changedEnough).
 - Manual com `demo.html` (abrir via `python3 -m http.server`, porque content scripts não rodam em `file://` sem permissão extra): checklist no plano de implementação.
 
 ## 12. Configuração do Ollama (README)
 
+Nesta máquina o Ollama **não** roda como serviço systemd, então o caminho principal é o manual:
+
 ```bash
-ollama pull qwen2.5:3b
-# Liberar CORS para a extensão (rodando manualmente):
+ollama pull qwen2.5:3b   # ~1,9GB, uma vez
+# Liberar CORS para a extensão:
 OLLAMA_ORIGINS='chrome-extension://*' ollama serve
-# Ou, se o Ollama roda como serviço systemd:
+# Se um dia virar serviço systemd:
 sudo systemctl edit ollama
 #   [Service]
 #   Environment="OLLAMA_ORIGINS=chrome-extension://*"

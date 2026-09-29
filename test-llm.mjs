@@ -97,4 +97,11 @@ assert.match(ans[0].content, /Isto não está nos dados:/);
 assert.match(ans[0].content, /Nunca invente valores/);
 assert.match(ans[0].content, /Se não houver DADOS, responda normalmente/);
 assert.doesNotMatch(ans[0].content, /em vez de inventar|diga o que falta/);
+
+// problema de matemática: sem estatísticas inúteis no prompt, e a regra de resolver passo a passo
+const mathSummary = { locale: 'pt', groups: [], primary: null };
+const mathMsgs = buildMessages({ snapshot: { ...snap, text: '(1) 3x - 9 = 0 (2) x^2 = 9' }, summary: mathSummary, question: 'Se x é real, qual é x?', answer: true });
+assert.doesNotMatch(mathMsgs[1].content, /ESTATÍSTICAS/);
+assert.match(mathMsgs[1].content, /DADOS:\n<<<\n\(1\) 3x - 9 = 0 \(2\) x\^2 = 9\n>>>/);
+assert.match(mathMsgs[0].content, /avalie cada afirmação numerada sozinha/);
 console.log('OK: todos os testes de llm.js passaram');

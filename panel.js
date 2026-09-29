@@ -1,4 +1,4 @@
-import { summarize, delta, changedEnough, splitQuestion, calc, detectLocale } from './stats.js';
+import { summarize, delta, changedEnough, splitQuestion, calc, detectLocale, cleanMath, looksLikeMath } from './stats.js';
 import { analyze } from './llm.js';
 
 const LLM_WINDOW_MS = 15000; // pin: no máximo 1 análise do LLM a cada 15s
@@ -133,7 +133,7 @@ function newAnswer(question, data, lang = '') {
     question,
     calc: calc(question, state.pinLocale ?? detectLocale(question, lang)),
     data,
-    dataSummary: data ? summarize(data) : null,
+    dataSummary: data ? (looksLikeMath(data.text) ? { locale: 'pt', groups: [], primary: null } : summarize(data)) : null,
   };
 }
 
@@ -150,6 +150,7 @@ function newTypedAnswer(question) {
 
 function onSnapshot(snap) {
   if (snap.source === 'selection') {
+    snap = { ...snap, text: cleanMath(snap.text) }; // LaTeX colado como texto vira símbolos legíveis
     state.current = snap;
     const sq = splitQuestion(snap.text);
     if (sq) {
@@ -306,7 +307,7 @@ function renderAnalysis() {
   const box = $('analysis');
   box.replaceChildren();
   let list = null;
-  for (const line of state.raw.split('\n')) {
+  for (const line of cleanMath(state.raw).split('\n')) { // o modelo às vezes devolve LaTeX cru
     const t = line.trim();
     if (!t) { list = null; continue; }
     const m = t.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/);
@@ -424,7 +425,7 @@ function renderStats() {
   syncView();
   if (!state.summary) return; // pergunta sem elemento fixado: não há dados a resumir
   if (state.summary.groups.length === 0) {
-    box.textContent = 'Sem números aqui.';
+    if (!state.answer) box.textContent = 'Sem números aqui.';
     return;
   }
   // Elemento fixado com um número só: o valor ao vivo (acima) já o mostra; repetir aqui é ruído.

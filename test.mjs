@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   detectLocale, parseNumber, extractNumbers, describe,
-  tableColumns, summarize, delta, changedEnough, isQuestion, calc, splitQuestion,
+  tableColumns, summarize, delta, changedEnough, isQuestion, calc, splitQuestion, cleanMath, looksLikeMath,
 } from './stats.js';
 
 // detectLocale
@@ -164,4 +164,31 @@ assert.equal(splitQuestion(''), null);
 assert.equal(splitQuestion('dados\n' + 'q'.repeat(400) + '?'), null);              // "pergunta" longa demais não conta
 assert.equal(splitQuestion('x'.repeat(5000) + '\nQual o maior?').rest.length, 5000);  // dados grandes ficam inteiros
 
+
+// --- problema com pergunta no meio (ex.: questão de matemática com LaTeX) ---
+const RAW = 'Se \\[x\\] é um número real, qual é o valor de \\[x\\]?(1) \\(3x - 9 = 0\\)(2) \\(x^2 = 9\\)';
+assert.equal(cleanMath(RAW), 'Se x é um número real, qual é o valor de x? (1) 3x - 9 = 0 (2) x^2 = 9');
+assert.equal(cleanMath('2 \\times 3 \\div 4'), '2 × 3 ÷ 4');
+assert.equal(cleanMath('\\frac{1}{2} + \\sqrt{9} + x^{2}'), '(1)/(2) + √(9) + x^2');
+assert.equal(cleanMath('\\left( a \\right) \\le b'), '( a ) ≤ b');
+for (const t of ['Receita 1.234,56 ?', 'veja https://x.com/?q=1', 'Ana Recife 10\nBruno Natal 20']) assert.equal(cleanMath(t), t); // sem LaTeX, nada muda
+assert.equal(looksLikeMath('(1) 3x - 9 = 0 (2) x^2 = 9'), true);
+assert.equal(looksLikeMath('2x + 3 = 7'), true);
+assert.equal(looksLikeMath('x² > 4'), true);
+assert.equal(looksLikeMath('Ana Recife 10\nBruno Natal 20'), false);
+assert.equal(looksLikeMath('Receita R$ 1.500,00 em março'), false);
+assert.deepEqual(splitQuestion(cleanMath(RAW)),
+  { question: 'Se x é um número real, qual é o valor de x?', rest: '(1) 3x - 9 = 0 (2) x^2 = 9' });
+assert.deepEqual(splitQuestion('Considere A e B. Qual é maior? A = 10; B = 20'),
+  { question: 'Qual é maior?', rest: 'Considere A e B. A = 10; B = 20' });
+assert.deepEqual(splitQuestion('Se x é real, qual é x?\n(1) 3x - 9 = 0\n(2) x^2 = 9'),
+  { question: 'Se x é real, qual é x?', rest: '(1) 3x - 9 = 0\n(2) x^2 = 9' });
+assert.equal(splitQuestion('veja https://x.com/?q=1 e 10'), null);                      // "?" dentro de URL não é pergunta
+assert.equal(splitQuestion('Ana Recife 10 Bruno Natal 20'), null);
+
+
+// LaTeX na resposta do modelo (blocos \[ \], \text, quebras \\)
+assert.equal(cleanMath('Como \\(3x = 9\\), temos \\[ x = \\frac{9}{3} \\] e x = \\pm 3.'), 'Como 3x = 9, temos x = (9)/(3) e x = ± 3.');
+assert.equal(cleanMath('\\[\n3x = 9 \\\\\nx = 3\n\\]'), '3x = 9\nx = 3');
+assert.equal(cleanMath('\\text{Portanto } x = 3'), 'Portanto x = 3');
 console.log('OK: todos os testes de stats.js passaram');

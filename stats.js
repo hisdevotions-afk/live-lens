@@ -223,25 +223,68 @@ export function calc(text, locale = 'pt') {
 }
 
 const ENDS_Q = /\?["'”)\]]*$/;
+// "?" que fecha uma pergunta: seguido de espaço, "(" ou fim; "?q=1" (URL) não conta.
+const Q_MARK = /^([\s\S]*?\?["'”)\]]*)(?=\s|\(|$)([\s\S]*)$/;
+
+// Limpa LaTeX colado como texto (\( \) \[ \] \times \frac...). Sem marcas de LaTeX, devolve o texto intacto.
+export function cleanMath(text) {
+  const t = String(text);
+  if (!/\\[\[\]()a-zA-Z]/.test(t)) return t;
+  return t
+    .replace(/\\(?:left|right)\b/g, '')
+    .replace(/\\(?:text|mathrm|mathbf)\{([^{}]*)\}/g, '$1')
+    .replace(/\\\\[ \t]*\n?/g, '\n') // \\ de fim de linha do LaTeX
+    .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '($1)/($2)')
+    .replace(/\\sqrt\{([^{}]*)\}/g, '√($1)')
+    .replace(/\^\{([^{}]*)\}/g, '^$1')
+    .replace(/\\times\b|\\cdot\b/g, '×')
+    .replace(/\\div\b/g, '÷')
+    .replace(/\\leq?\b/g, '≤')
+    .replace(/\\geq?\b/g, '≥')
+    .replace(/\\neq?\b/g, '≠')
+    .replace(/\\pm\b/g, '±')
+    .replace(/\\[\[\]()]/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ +([?,;:.])/g, '$1')
+    .replace(/\?(?=\()/g, '? ')
+    .replace(/ *\n */g, '\n')
+    .trim();
+}
+
+// Equação, comparação, potência ou "3x": o texto é um problema, não uma tabela de números.
+export const looksLikeMath = (text) => /[=<>≤≥≠±√^²³]|\d[xyzn]\b/i.test(String(text));
+
+// Pergunta no meio de uma linha: "Qual é x? (1) ... (2) ..." → { question, rest }.
+function splitInLine(line) {
+  const pieces = line.split(/(?<=[.!])\s+(?=[A-ZÀ-Ú])/);
+  for (let k = 0; k < pieces.length; k++) {
+    const m = pieces[k].match(Q_MARK);
+    if (!m) continue;
+    const question = m[1].trim();
+    if (question.length < 2 || question.length > 300) continue;
+    const rest = [...pieces.slice(0, k), m[2].trim(), ...pieces.slice(k + 1)].filter(Boolean).join(' ').trim();
+    return { question, rest };
+  }
+  return null;
+}
 
 // Acha a pergunta dentro de uma seleção. { question, rest } (rest = os dados que vieram junto) ou null.
 export function splitQuestion(text) {
   const t = String(text).trim();
   if (!t) return null;
   const lines = t.split('\n');
+  if (lines.length === 1) return splitInLine(t) ?? (isQuestion(t) ? { question: t, rest: '' } : null);
   // Pergunta numa linha própria (a última, ou a primeira, com os dados nas outras).
-  for (let i = lines.length - 1; i >= 0 && lines.length > 1; i--) {
+  for (let i = lines.length - 1; i >= 0; i--) {
     const ln = lines[i].trim();
     if (ln.length <= 300 && ENDS_Q.test(ln)) {
-      const rest = lines.filter((_, j) => j !== i).join('\n').trim();
-      return { question: ln, rest };
+      return { question: ln, rest: lines.filter((_, j) => j !== i).join('\n').trim() };
     }
   }
-  // Pergunta como última frase de um parágrafo ("... 980,00. Qual mês vendeu mais?"). Decimais não têm espaço depois.
-  if (lines.length === 1 && ENDS_Q.test(t)) {
-    const pieces = t.split(/(?<=[.!])\s+(?=[A-ZÀ-Ú])/);
-    const last = pieces.at(-1).trim();
-    if (pieces.length > 1 && last.length <= 300) return { question: last, rest: pieces.slice(0, -1).join(' ').trim() };
+  // Pergunta no meio de uma linha, com o enunciado logo depois.
+  for (let i = 0; i < lines.length; i++) {
+    const r = splitInLine(lines[i].trim());
+    if (r) return { question: r.question, rest: [...lines.slice(0, i), r.rest, ...lines.slice(i + 1)].filter(Boolean).join('\n').trim() };
   }
-  return isQuestion(t) ? { question: t, rest: '' } : null; // pergunta sozinha
+  return null;
 }

@@ -280,7 +280,7 @@ function maybeRunLlmForPin() {
   runLlm('', 'pin');
 }
 
-async function runLlm(question = '', kind = 'user', force = false) {
+async function runLlm(question = '', kind = 'user') {
   clearTimeout(state.pendingTimer);
   state.controller?.abort();
   if (question) newTypedAnswer(question); // pergunta digitada no painel
@@ -290,12 +290,14 @@ async function runLlm(question = '', kind = 'user', force = false) {
     setLlmStatus('Selecione algo na página ou digite uma pergunta.');
     return;
   }
-  if (answer?.resolution?.complete && !force) {
-    // Já resolvido em código (exato): o LLM só entra se o usuário pedir a explicação (Reanalisar).
+  if (answer?.resolution?.complete) {
+    // Já resolvido em código (exato): resposta e explicação saem do código; o LLM não entra.
     state.busy = false;
     $('asked').hidden = false;
     $('asked').textContent = answer.question;
-    setAnalysis('');
+    const r = answer.resolution;
+    // Explicação também em código: o LLM (3B) contradiz ou inventa passos numa questão que o código já resolveu.
+    setAnalysis(r.explanation ? `${r.explanation.join('\n')}${r.letter ? `\n\n**Alternativa: ${r.letter}**` : ''}` : '');
     setLlmStatus('resolvido em código');
     return;
   }
@@ -314,10 +316,9 @@ async function runLlm(question = '', kind = 'user', force = false) {
   setLlmStatus('analisando…');
   try {
     const chunks = answer
-      ? analyze({ model: state.model, snapshot: answer.data ?? state.pinSnap, summary: answer.dataSummary ?? state.pinSummary, question: answer.question, answer: true, calc: answer.calc, resolution: answer.resolution?.lines, signal: controller.signal })
+      ? analyze({ model: state.model, snapshot: answer.data ?? state.pinSnap, summary: answer.dataSummary ?? state.pinSummary, question: answer.question, answer: true, calc: answer.calc, signal: controller.signal })
       : analyze({ model: state.model, snapshot: snap, summary: state.summary, question, signal: controller.signal });
     for await (const chunk of chunks) appendAnalysis(chunk);
-    ensureAlternative(answer);
     setLlmStatus(`${answer ? 'resposta' : 'análise'} de ${time(state.lastLlmAt)}`);
   } catch (e) {
     if (e.name === 'AbortError') return; // cancelamento é normal
@@ -392,16 +393,6 @@ function renderAnalysis() {
   }
 }
 
-// A explicação termina com a alternativa que o código calculou: se o modelo esqueceu ou errou a letra, vale a do código.
-function ensureAlternative(answer) {
-  const letter = answer?.resolution?.letter;
-  if (!letter) return;
-  const lines = state.raw.replace(/\s+$/, '').split('\n');
-  if (/^\**\s*Alternativa\s*:/i.test(lines.at(-1) ?? '')) lines.pop();
-  state.raw = `${lines.join('\n').replace(/\s+$/, '')}\n\n**Alternativa: ${letter}**`;
-  renderAnalysis();
-}
-
 function setAnalysis(text) {
   state.raw = text;
   renderAnalysis();
@@ -422,7 +413,7 @@ $('pause').addEventListener('click', () => {
     setLlmStatus('pausado');
   }
 });
-$('rerun').addEventListener('click', () => runLlm('', 'user', true));
+$('rerun').addEventListener('click', () => runLlm('', 'user'));
 
 function sendQuestion() {
   const q = $('question').value.trim();
@@ -516,6 +507,7 @@ function renderCalc() {
   const c = state.answer?.calc;
   const box = $('calc');
   box.hidden = !(res || c);
+  $('rerun').disabled = !!res?.complete; // resolvido em código: não há o que pedir ao LLM
   box.replaceChildren();
   const part = (cls, text) => Object.assign(document.createElement('span'), { className: cls, textContent: text });
   if (res) {

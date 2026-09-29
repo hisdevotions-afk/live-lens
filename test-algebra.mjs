@@ -164,4 +164,28 @@ assert.equal(isDataSufficiencyShape('(1) n é par\n(2) n é primo'), false);    
 assert.equal(isDataSufficiencyShape('Receita 1500 e custo 900'), false);
 assert.equal(isDataSufficiencyShape(OPT), false);                                        // alternativas sozinhas, sem afirmações
 
+
+// ---- explicação em código (o LLM erra a explicação de questões já resolvidas) ----
+assert.deepEqual(r1.explanation, [
+  'Resolvi cada equação em números reais.',
+  '(1) 3x - 9 = 0: dá x = 3, um único valor: basta.',
+  '(2) x^2 = 9: dá x = -3 ou x = 3, mais de um valor: não basta.',
+  'Portanto: A declaração (1) sozinha é suficiente, mas a declaração (2) sozinha não é suficiente.',
+]);
+assert.deepEqual(n1.explanation, [
+  'Conferi por enumeração os inteiros positivos de 1 a 5000.',
+  '(1) n é divisível por 3: há casos com respostas diferentes (n = 3: não; n = 6: sim): não basta.',
+  '(2) n é par: há casos com respostas diferentes (n = 2: não; n = 6: sim): não basta.',
+  'Juntas: n é divisível por 3 e n é par: a resposta é sempre "sim" em todos os casos verificados: basta.',
+  'Portanto: As duas afirmações juntas são suficientes, mas nenhuma sozinha é suficiente.',
+]);
+const sq6 = resolve('Para um número inteiro positivo n, n é um quadrado perfeito?', '(1) n possui exatamente 6 divisores positivos.\n(2) n é divisível por exatamente 2 números primos distintos.\n' + OPT);
+assert.equal(sq6.letter, 'A');
+assert.equal(sq6.explanation[1], '(1) n possui exatamente 6 divisores positivos: a resposta é sempre "não" em todos os casos verificados: basta.');
+assert.match(sq6.explanation[2], /^\(2\) n é divisível por exatamente 2 números primos distintos: há casos com respostas diferentes \(n = 6: não; n = 36: sim\): não basta\.$/);
+assert.equal(sq6.explanation.at(-1), 'Portanto: A afirmação (1) sozinha é suficiente, mas (2) sozinha não é.');
+const val = resolve('Se n é um inteiro positivo, qual é o valor de n?', '(1) n^2 = 9\n(2) n > 2');
+assert.equal(val.explanation[1], '(1) n^2 = 9: só existe um valor possível (n = 3): basta.');
+assert.match(val.explanation[2], /^\(2\) n > 2: há mais de um valor possível \(n = 3, n = 4, n = 5, …\): não basta\.$/);
+assert.equal(resolve('Qual é o valor de x em 2x + 3 = 7?', '').explanation, undefined);   // equação única: o cartão basta
 console.log('OK: todos os testes de algebra.js passaram');

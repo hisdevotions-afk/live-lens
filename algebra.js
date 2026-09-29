@@ -243,7 +243,7 @@ function finalAnswer(kind, rest) {
   }
   const all = Object.keys(found).length === 5 && new Set(Object.values(found).map((o) => o.letter)).size === 5;
   const o = all ? found[kind] : { letter: kind, text: OPTIONS[kind] };
-  return { letter: o.letter, line: `Resposta: ${o.letter} — ${o.text}` };
+  return { letter: o.letter, line: `Resposta: ${o.letter} — ${o.text}`, text: o.text };
 }
 
 const sufficient = (s) => s.kind === 'values' && s.values.length === 1;
@@ -295,7 +295,11 @@ function resolveStatements(question, stmts, rest) {
   }
   const ans = finalAnswer(dsKind(s1.sufficient, s2.sufficient, together && sufficient(together)), rest);
   lines.push(ans.line);
-  return { variable, statements, together, letter: ans.letter, lines, complete: true };
+  const why = (kind, values, text, ok) => (ok ? `dá ${text}, um único valor: basta.` : kind === 'none' ? 'não tem solução real: não basta.' : kind === 'all' ? 'vale para qualquer valor real: não basta.' : `dá ${text}, mais de um valor: não basta.`);
+  const explanation = ['Resolvi cada equação em números reais.', ...statements.map((s) => `(${s.label}) ${s.text}: ${why(s.kind, s.values, s.answer, s.sufficient)}`)];
+  if (together) explanation.push(`Juntas: ${sufficient(together) ? `dão ${describeSolution(together.kind, together.snaps ?? [], variable)}, um único valor: basta.` : `dão ${describeSolution(together.kind, together.snaps ?? [], variable)}: não basta.`}`);
+  explanation.push(`Portanto: ${ans.text}`);
+  return { variable, statements, together, letter: ans.letter, lines, explanation, complete: true };
 }
 
 // ---------- Inteiros: divisibilidade, paridade, primo, comparações (verificação por enumeração) ----------
@@ -464,7 +468,15 @@ function resolveIntegers(question, stmts, rest) {
   }
   const ans = finalAnswer(dsKind(rs[0].ok, rs[1].ok, together?.ok), rest);
   lines.push(ans.line);
-  return { variable: letters.join(','), statements: stmts.map((s, i) => ({ label: s.label, text: s.text, sufficient: rs[i].ok })), together, letter: ans.letter, lines, complete: true };
+  const why = (r) => {
+    if (valueVar) return r.ok ? `só existe um valor possível (${r.text}): basta.` : `há mais de um valor possível (${r.text}): não basta.`;
+    return r.ok ? `a resposta é ${r.text.replace('sempre ', 'sempre "')}" em todos os casos verificados: basta.` : `há casos com respostas diferentes (${r.text}): não basta.`;
+  };
+  const withCons = constraints.length ? `${what} (com ${constraints.map((c) => c.text).join(' e ')})` : what;
+  const explanation = [`Conferi por enumeração os ${withCons} ${span}.`, ...stmts.map((s, i) => `(${s.label}) ${s.text}: ${why(rs[i])}`)];
+  if (together) explanation.push(`Juntas: ${stmts[0].text} e ${stmts[1].text}: ${why(together)}`);
+  explanation.push(`Portanto: ${ans.text}`);
+  return { variable: letters.join(','), statements: stmts.map((s, i) => ({ label: s.label, text: s.text, sufficient: rs[i].ok })), together, letter: ans.letter, lines, explanation, complete: true };
 }
 
 // ---------- Equação única ----------

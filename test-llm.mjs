@@ -105,18 +105,15 @@ assert.doesNotMatch(mathMsgs[1].content, /ESTATÍSTICAS/);
 assert.match(mathMsgs[1].content, /DADOS:\n<<<\n\(1\) 3x - 9 = 0 \(2\) x\^2 = 9\n>>>/);
 assert.match(mathMsgs[0].content, /avalie cada afirmação numerada sozinha/);
 
-// resolução exata feita em código entra no prompt como fato
-const res = buildMessages({ snapshot: { ...snap, text: '(1) 3x - 9 = 0 (2) x^2 = 9' }, summary: mathSummary, question: 'Se x é real, qual é x?', answer: true,
-  resolution: ['(1) 3x - 9 = 0 → x = 3 → suficiente', '(2) x^2 = 9 → x = -3 ou x = 3 → insuficiente', 'Resposta: A — A declaração (1) sozinha é suficiente, mas a declaração (2) sozinha não é suficiente.'] });
-assert.match(res[0].content, /Se houver RESOLUÇÃO, ela é exata: explique-a passo a passo, sem contradizê-la/);
-assert.match(res[1].content, /RESOLUÇÃO \(exata, feita em código\):\n\(1\) 3x - 9 = 0 → x = 3 → suficiente\n\(2\) x\^2 = 9 → x = -3 ou x = 3 → insuficiente\nResposta: A — /);
-assert.ok(res[1].content.endsWith('\nPERGUNTA: Se x é real, qual é x?'));
-assert.doesNotMatch(buildMessages({ snapshot: null, summary: null, question: 'Qual?', answer: true })[1].content, /RESOLUÇÃO/);
 
 // a alternativa vai no fim da explicação
 assert.match(ans[0].content, /Se os DADOS trouxerem alternativas \(A, B, C…\), termine com uma última linha "Alternativa: X"/);
-assert.match(ans[0].content, /Se a RESOLUÇÃO tiver "Resposta: X", a última linha deve ser "Alternativa: X"/);
 
 // suficiência de dados sem resolução em código: o modelo não pode alegar que "faltam dados"
 assert.match(ans[0].content, /Em problemas de suficiência de dados, as afirmações \(1\) e \(2\) são os dados: avalie cada uma e nunca diga que faltam dados/);
+
+
+// problema resolvido em código não vai para o LLM: nada de RESOLUÇÃO no prompt
+assert.doesNotMatch(buildMessages({ snapshot: snap, summary, question: 'Qual?', answer: true, resolution: ['(1) x → suficiente'] })[1].content, /RESOLUÇÃO/);
+assert.doesNotMatch(buildMessages({ snapshot: snap, summary, question: 'Qual?', answer: true, resolution: ['(1) x → suficiente'] })[0].content, /CORRETA/);
 console.log('OK: todos os testes de llm.js passaram');

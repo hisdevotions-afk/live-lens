@@ -43,6 +43,12 @@ sudo systemctl restart ollama
 - **Pergunta:** digite no campo de baixo e aperte Enter.
 - **Modelo:** troque no campo "Modelo" (precisa de `ollama pull <modelo>` antes).
 
+## Limitações conhecidas
+
+- **Injeção de prompt.** Os modelos locais pequenos seguem ordens escondidas no texto que você seleciona (testado: `qwen2.5:3b` obedece em parte, `qwen2.5:7b` obedece por completo, e um modelo maior não resolveu). O painel só mostra texto, sem ações, mas a análise pode ser enganada. Use em páginas em que você confia e trate a análise como sugestão; **as estatísticas são calculadas em código e não sofrem disso**.
+- **Precisão do LLM.** Ele pode apontar "outlier" onde não há (as estatísticas exatas ficam logo acima) ou trocar linhas da tabela. Confie nos números do bloco de estatísticas, não nos do texto.
+- **Velocidade.** Em CPU cada análise leva de ~10s a ~70s (a primeira, a frio, é a mais lenta; o 7b chega a ~85s). Com um elemento fixado, a nova análise só começa 15s depois de a anterior terminar.
+
 ## Testes
 
 ```bash

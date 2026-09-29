@@ -124,4 +124,29 @@ assert.ok(s2.lines.at(-1).startsWith('Resposta: D — A afirmação (1) sozinha 
 // a linha "Alternativas..." não contamina a afirmação (2)
 assert.equal(resolve('Se x é um número real, qual é o valor de x?', '(1) 3x - 9 = 0\n(2) x^2 = 9\nAlternativas padrão GMAT:\nA) A afirmação (1) sozinha é suficiente, mas (2) sozinha não é.').letter, 'A');
 
+
+// ---- duas variáveis inteiras (o caso reportado: x − y divisível por 6) ----
+const Q2 = 'Se x e y são números inteiros positivos, x>y, então x−y é divisível por 6?';
+const OPT5 = `A) A afirmação (1) sozinha é suficiente, mas (2) sozinha não é.
+B) A afirmação (2) sozinha é suficiente, mas (1) sozinha não é.
+C) As duas afirmações juntas são suficientes, mas nenhuma sozinha é suficiente.
+D) Cada afirmação sozinha é suficiente.
+E) Mesmo juntas, as afirmações não são suficientes.`;
+const two = resolve(Q2, `(1) x é divisível por 3.\n(2) y é divisível por 2.\n${OPT5}`);
+assert.equal(two.letter, 'E');
+assert.equal(two.complete, true);
+assert.match(two.lines[0], /^Domínio: inteiros positivos, x > y \(verificado de 1 a 100 para cada variável\)\.$/);
+assert.match(two.lines[1], /^\(1\) x é divisível por 3 → insuficiente \(x = 3, y = 1: não; x = 9, y = 3: sim\)$/);
+assert.match(two.lines[2], /^\(2\) y é divisível por 2 → insuficiente \(/);
+assert.match(two.lines[3], /^Juntas: x é divisível por 3 e y é divisível por 2 → insuficiente \(/);
+assert.equal(two.lines[4], 'Resposta: E — Mesmo juntas, as afirmações não são suficientes.');
+assert.equal(resolve('Se x e y são números inteiros positivos, então x+y é par?', '(1) x é par\n(2) y é par').letter, 'C');   // par + par
+assert.equal(resolve('Se x e y são inteiros positivos, xy é ímpar?', '(1) x é ímpar\n(2) y é ímpar').letter, 'C');           // "xy" = x·y
+assert.equal(resolve('Se x e y são inteiros positivos, x>y, então x−y é positivo?', '(1) x = 5\n(2) y = 2').letter, 'D');     // a restrição x > y já basta em cada uma
+assert.equal(resolve('Se x e y são inteiros positivos, então x/y é um inteiro?', '(1) x = 6\n(2) y = 3').letter, 'C');
+assert.equal(resolve('Se x e y são inteiros positivos, qual é o valor de x?', '(1) x + y = 3\n(2) x > y').letter, 'C');       // valor de x com duas variáveis
+assert.equal(resolve('Se x e y são inteiros positivos, então x+y é par?', '(1) x é par\n(2) z é par'), null);                 // variável fora do enunciado
+assert.equal(resolve('Se x, y e z são inteiros positivos, então x+y+z é par?', '(1) x é par\n(2) y é par'), null);            // 3 variáveis: não decido
+assert.equal(resolve('Se x e y são inteiros positivos, então x+y é par?', '(1) x é par\n(2) y é quadrado perfeito'), null);
+
 console.log('OK: todos os testes de algebra.js passaram');

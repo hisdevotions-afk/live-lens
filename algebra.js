@@ -5,7 +5,7 @@ const FUNCS = { sqrt: Math.sqrt, abs: Math.abs };
 
 // ---------- Leitura da equação ----------
 
-function tokenize(text) {
+function tokenize(text, splitVars = null) {
   const t = String(text)
     .replace(/²/g, '^2').replace(/³/g, '^3')
     .replace(/[−–]/g, '-').replace(/[×·⋅]/g, '*').replace(/÷/g, '/').replace(/√/g, ' sqrt ')
@@ -26,7 +26,8 @@ function tokenize(text) {
       const low = s.toLowerCase();
       if (FUNCS[low]) toks.push({ k: 'fn', v: low });
       else if (s.length === 1) toks.push({ k: 'var', v: low });
-      else return null; // "xy", "Receita": não é uma variável só
+      else if (splitVars && [...low].every((ch) => splitVars.has(ch))) for (const ch of low) toks.push({ k: 'var', v: ch }); // xy = x·y
+      else return null; // "Receita": não é uma variável só
     } else toks.push({ k: s });
   }
   return toks;
@@ -66,7 +67,7 @@ function parse(toks, vars) {
     const t = toks[i++];
     if (!t) bad();
     if (t.k === 'num') return { t: 'num', v: t.v };
-    if (t.k === 'var') { vars.add(t.v); return { t: 'var' }; }
+    if (t.k === 'var') { vars.add(t.v); return { t: 'var', name: t.v }; }
     if (t.k === 'fn') return { t: 'fn', f: t.v, a: atom() };
     if (t.k === '(') {
       const n = expr();
@@ -83,7 +84,7 @@ function parse(toks, vars) {
 function compile(n) {
   switch (n.t) {
     case 'num': return () => n.v;
-    case 'var': return (x) => x;
+    case 'var': return (x) => (typeof x === 'number' ? x : x[n.name]);
     case 'neg': { const a = compile(n.a); return (x) => -a(x); }
     case 'fn': { const a = compile(n.a); const f = FUNCS[n.f]; return (x) => f(a(x)); }
     default: {
@@ -290,10 +291,14 @@ function resolveStatements(question, stmts, rest) {
 
 // ---------- Inteiros: divisibilidade, paridade, primo, comparações (verificação por enumeração) ----------
 
-const N = 5000;
-const isPrime = (n) => { if (n < 2) return false; for (let d = 2; d * d <= n; d++) if (n % d === 0) return false; return true; };
+const N1 = 5000; // uma variável: de 1 a 5000
+const N2 = 100;  // duas variáveis: de 1 a 100 cada
+const isInt = Number.isInteger;
+const isPrime = (n) => { if (!isInt(n) || n < 2) return false; for (let d = 2; d * d <= n; d++) if (n % d === 0) return false; return true; };
+const REL = { '>': (a, b) => a > b, '<': (a, b) => a < b, '>=': (a, b) => a >= b, '≥': (a, b) => a >= b, '<=': (a, b) => a <= b, '≤': (a, b) => a <= b,
+  '=': (a, b) => Math.abs(a - b) <= 1e-9 * (Math.abs(a) + Math.abs(b)) + 1e-12, '!=': (a, b) => a !== b, '≠': (a, b) => a !== b };
 
-// Predicado numa frase ("divisível por 3", "par", "> 2", "maior que 10"); null se não entender TUDO.
+// Predicado sobre um número ("divisível por 3", "par", "> 2", "maior que 10"); null se não entender TUDO.
 function parsePredicate(raw) {
   const s0 = raw.trim().toLowerCase().replace(/[.?;]+$/, '').trim();
   const parts = s0.split(/\s+e\s+/);
@@ -303,10 +308,11 @@ function parsePredicate(raw) {
   }
   const s = s0.replace(/^(?:é|for|seja|era)\s+/, '').replace(/^(?:um|uma)\s+/, '').replace(/^número\s+/, '');
   let m;
-  if ((m = s.match(/^(?:divisível\s+por|múltiplo\s+de)\s+(\d+)$/))) { const k = Number(m[1]); return k > 0 ? (n) => n % k === 0 : null; }
-  if (s === 'par') return (n) => n % 2 === 0;
-  if (s === 'ímpar') return (n) => n % 2 !== 0;
+  if ((m = s.match(/^(?:divisível\s+por|múltiplo\s+de)\s+(\d+)$/))) { const k = Number(m[1]); return k > 0 ? (n) => isInt(n) && n % k === 0 : null; }
+  if (s === 'par') return (n) => isInt(n) && n % 2 === 0;
+  if (s === 'ímpar') return (n) => isInt(n) && n % 2 !== 0;
   if (s === 'primo') return isPrime;
+  if (s === 'inteiro') return isInt;
   if (s === 'positivo') return (n) => n > 0;
   if (s === 'negativo') return (n) => n < 0;
   if ((m = s.match(/^(maior|menor)\s+(ou\s+igual\s+)?(?:que|a|do\s+que)\s+(-?\d+)$/))) {
@@ -316,71 +322,132 @@ function parsePredicate(raw) {
   }
   if ((m = s.match(/^(>=|≥|<=|≤|>|<|=|igual\s+a)\s*(-?\d+)$/))) {
     const k = Number(m[2]);
-    return { '>=': (n) => n >= k, '≥': (n) => n >= k, '<=': (n) => n <= k, '≤': (n) => n <= k, '>': (n) => n > k, '<': (n) => n < k }[m[1]] ?? ((n) => n === k);
+    const cmp = REL[m[1]] ?? REL['='];
+    return (n) => cmp(n, k);
   }
   return null;
 }
 
-function parseStatement(text, v) {
-  const m = text.trim().match(/^([a-z])\s*(.*)$/i);
-  if (m && m[1].toLowerCase() === v) {
-    const p = parsePredicate(m[2]);
-    if (p) return p;
+// Expressão aritmética nas variáveis permitidas → { fn(env), vars } ou null.
+function compileExpr(text, allowed) {
+  const toks = tokenize(text, allowed);
+  if (!toks || !toks.length || toks.some((t) => t.k === '=')) return null;
+  const vars = new Set();
+  try {
+    const fn = compile(parse(toks, vars));
+    return [...vars].every((v) => allowed.has(v)) ? { fn, vars } : null;
+  } catch {
+    return null;
   }
-  const c = compileEquation(text); // "n^2 = 9", "2n + 1 = 7"
-  if (!c || c.variable !== v) return null;
-  return (n) => { const l = c.L(n); const r = c.R(n); const y = l - r; return Number.isFinite(y) && Math.abs(y) <= 1e-9 * (Math.abs(l) + Math.abs(r)) + 1e-12; };
+}
+
+// "x é divisível por 3", "x + y = 3", "x>y" → { fn(env), text } ou null.
+function parseStatement(text, allowed) {
+  const t = text.trim().replace(/[.;]+$/, '');
+  const rel = t.match(/^(.+?)(>=|≥|<=|≤|!=|≠|=|>|<)(.+)$/);
+  const isPred = /\s(?:é|for|seja)\s/.test(t);
+  if (rel && !isPred) {
+    const l = compileExpr(rel[1], allowed);
+    const r = compileExpr(rel[3], allowed);
+    if (!l || !r) return null;
+    const cmp = REL[rel[2]];
+    return { fn: (env) => { const a = l.fn(env); const b = r.fn(env); return Number.isFinite(a) && Number.isFinite(b) && cmp(a, b); }, text: `${rel[1].trim()} ${rel[2]} ${rel[3].trim()}` };
+  }
+  const m = t.match(/^(.+?)\s+(?:é|for|seja)\s+(.+)$/);
+  if (!m) return null;
+  const subj = compileExpr(m[1], allowed);
+  const pred = parsePredicate(m[2]);
+  if (!subj || !pred) return null;
+  return { fn: (env) => { const v = subj.fn(env); return Number.isFinite(v) && pred(v); }, text: t };
+}
+
+// O sujeito da pergunta ("x−y é divisível por 6"): o maior trecho de expressão logo antes de " é ".
+function parseAsk(clause, allowed) {
+  const t = clause.trim();
+  const rel = parseStatement(t, allowed);
+  if (rel && !/\s(?:é|for|seja)\s/.test(t)) return rel;
+  for (const m of [...t.matchAll(/\s+é\s+/g)].reverse()) {
+    const pred = parsePredicate(t.slice(m.index + m[0].length));
+    if (!pred) continue;
+    const words = t.slice(0, m.index).split(/\s+/);
+    let best = null;
+    for (let k = words.length - 1; k >= 0; k--) {
+      const c = compileExpr(words.slice(k).join(' '), allowed);
+      if (!c) break;
+      best = c;
+    }
+    if (best && best.vars.size) return { fn: (env) => { const v = best.fn(env); return Number.isFinite(v) && pred(v); }, text: t };
+  }
+  return null;
 }
 
 function resolveIntegers(question, stmts, rest) {
   const q = question;
   if (!/inteir/i.test(q) || /n[ãa]o\s+(?:negativ|positiv)/i.test(q) || /natura/i.test(q) || /\breais?\b/i.test(q)) return null;
   const domain = /inteiros?\s+positivos?/i.test(q) ? 'pos' : /inteiros?\s+negativos?/i.test(q) ? 'neg' : 'int';
-  const nums = [];
-  for (let n = domain === 'pos' ? 1 : -N; n <= (domain === 'neg' ? -1 : N); n++) nums.push(n);
   const letters = [...new Set([...q.matchAll(/(?<![\p{L}\d_])[a-z](?![\p{L}\d_])/gu)].map((m) => m[0]))].filter((c) => !['a', 'e', 'o'].includes(c));
-  if (letters.length !== 1) return null;
-  const [v] = letters;
-  const isValueQ = new RegExp(`valor\\s+d[eo]\\s+${v}\\b`, 'i').test(q);
-  let asks = null;
-  if (!isValueQ) {
-    const at = [...q.matchAll(new RegExp(`(?<![\\p{L}\\d_])${v}(?![\\p{L}\\d_])`, 'gu'))].at(-1);
-    asks = at ? parsePredicate(q.slice(at.index + 1).replace(/\?+\s*$/, '')) : null;
-    if (!asks) return null;
+  if (letters.length < 1 || letters.length > 2 || stmts.length !== 2) return null;
+  const allowed = new Set(letters);
+  const clauses = q.replace(/\?+\s*$/, '').split(/\s*,\s*/).map((c) => c.trim().replace(/^ent[ãa]o\s+/i, '')).filter(Boolean);
+  const last = clauses.at(-1);
+  // restrições entre o domínio e a pergunta ("x>y"): se não entendo alguma, não decido.
+  const constraints = [];
+  for (const c of clauses.slice(1, -1)) {
+    const p = parseStatement(c, allowed);
+    if (!p) return null;
+    constraints.push(p);
   }
-  const preds = stmts.map((s) => parseStatement(s.text, v));
-  if (stmts.length !== 2 || preds.some((p) => !p)) return null;
+  const valueVar = last.match(/valor\s+d[eo]\s+([a-z])\b/i)?.[1]?.toLowerCase();
+  let asks = null;
+  if (valueVar) { if (!allowed.has(valueVar)) return null; }
+  else { asks = parseAsk(last, allowed); if (!asks) return null; }
+  const preds = stmts.map((s) => parseStatement(s.text, allowed));
+  if (preds.some((p) => !p)) return null;
 
-  // Para o conjunto {n : p(n)}: suficiente? (sempre sim / sempre não / valor único) e testemunhas.
+  const limit = letters.length === 1 ? N1 : N2;
+  const lo = domain === 'pos' ? 1 : -limit;
+  const hi = domain === 'neg' ? -1 : limit;
+  const range = []; for (let n = lo; n <= hi; n++) range.push(n);
+  const envs = function* () {
+    if (letters.length === 1) for (const a of range) yield { [letters[0]]: a };
+    else for (const a of range) for (const b of range) yield { [letters[0]]: a, [letters[1]]: b };
+  };
+  const show = (env) => letters.map((v) => `${v} = ${env[v]}`).join(', ');
+
   const check = (p) => {
     let count = 0, yes, no;
-    const vals = [];
-    for (const n of nums) {
-      if (!p(n)) continue;
+    const vals = new Set();
+    for (const env of envs()) {
+      if (!constraints.every((c) => c.fn(env)) || !p(env)) continue;
       count++;
-      if (isValueQ) { if (vals.length < 3) vals.push(n); } else if (asks(n)) yes ??= n; else no ??= n;
+      if (valueVar) vals.add(env[valueVar]);
+      else if (asks.fn(env)) yes ??= { env, order: count }; else no ??= { env, order: count };
     }
     if (!count) return null; // afirmação impossível no domínio: não decido
-    if (isValueQ) return count === 1 ? { ok: true, text: `${v} = ${vals[0]}` } : { ok: false, text: `${vals.map((x) => `${v} = ${x}`).join(', ')}${count > 3 ? ', …' : ''}` };
-    if (yes === undefined || no === undefined) return { ok: true, text: yes === undefined ? 'sempre não' : 'sempre sim' };
-    const w = [[no, 'não'], [yes, 'sim']].sort((a, b) => a[0] - b[0]);
-    return { ok: false, text: w.map(([n, r]) => `${v} = ${n}: ${r}`).join('; ') };
+    if (valueVar) {
+      const list = [...vals];
+      return list.length === 1 ? { ok: true, text: `${valueVar} = ${list[0]}` } : { ok: false, text: `${list.slice(0, 3).map((x) => `${valueVar} = ${x}`).join(', ')}${list.length > 3 ? ', …' : ''}` };
+    }
+    if (!yes || !no) return { ok: true, text: yes ? 'sempre sim' : 'sempre não' };
+    const w = [[no, 'não'], [yes, 'sim']].sort((a, b) => a[0].order - b[0].order);
+    return { ok: false, text: w.map(([x, r]) => `${show(x.env)}: ${r}`).join('; ') };
   };
-  const rs = preds.map(check);
+  const rs = preds.map((p) => check(p.fn));
   if (rs.some((r) => !r)) return null;
   const label = (r) => (r.ok ? `${r.text} → suficiente` : `insuficiente (${r.text})`);
-  const domainLine = domain === 'pos' ? `Domínio: inteiros positivos (verificado de 1 a ${N}).`
-    : domain === 'neg' ? `Domínio: inteiros negativos (verificado de -${N} a -1).` : `Domínio: inteiros (verificado de -${N} a ${N}).`;
-  const lines = [domainLine, ...stmts.map((s, i) => `(${s.label}) ${s.text} → ${label(rs[i])}`)];
+  const what = domain === 'pos' ? 'inteiros positivos' : domain === 'neg' ? 'inteiros negativos' : 'inteiros';
+  const cons = constraints.map((c) => `, ${c.text}`).join('');
+  const span = `de ${lo} a ${hi}${letters.length === 1 ? '' : ' para cada variável'}`;
+  const lines = [`Domínio: ${what}${cons} (verificado ${span}).`, ...stmts.map((s, i) => `(${s.label}) ${s.text} → ${label(rs[i])}`)];
   let together = null;
   if (!rs[0].ok && !rs[1].ok) {
-    together = check((n) => preds[0](n) && preds[1](n));
+    together = check((env) => preds[0].fn(env) && preds[1].fn(env));
     if (!together) return null;
     lines.push(`Juntas: ${stmts[0].text} e ${stmts[1].text} → ${label(together)}`);
   }
   const ans = finalAnswer(dsKind(rs[0].ok, rs[1].ok, together?.ok), rest);
   lines.push(ans.line);
-  return { variable: v, statements: stmts.map((s, i) => ({ label: s.label, text: s.text, sufficient: rs[i].ok })), together, letter: ans.letter, lines, complete: true };
+  return { variable: letters.join(','), statements: stmts.map((s, i) => ({ label: s.label, text: s.text, sufficient: rs[i].ok })), together, letter: ans.letter, lines, complete: true };
 }
 
 // ---------- Equação única ----------

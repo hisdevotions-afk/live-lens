@@ -284,6 +284,7 @@ async function runLlm(question = '', kind = 'user', force = false) {
       ? analyze({ model: state.model, snapshot: answer.data ?? state.pinSnap, summary: answer.dataSummary ?? state.pinSummary, question: answer.question, answer: true, calc: answer.calc, resolution: answer.resolution?.lines, signal: controller.signal })
       : analyze({ model: state.model, snapshot: snap, summary: state.summary, question, signal: controller.signal });
     for await (const chunk of chunks) appendAnalysis(chunk);
+    ensureAlternative(answer);
     setLlmStatus(`${answer ? 'resposta' : 'análise'} de ${time(state.lastLlmAt)}`);
   } catch (e) {
     if (e.name === 'AbortError') return; // cancelamento é normal
@@ -356,6 +357,16 @@ function renderAnalysis() {
       box.append(p);
     }
   }
+}
+
+// A explicação termina com a alternativa que o código calculou: se o modelo esqueceu ou errou a letra, vale a do código.
+function ensureAlternative(answer) {
+  const letter = answer?.resolution?.letter;
+  if (!letter) return;
+  const lines = state.raw.replace(/\s+$/, '').split('\n');
+  if (/^\**\s*Alternativa\s*:/i.test(lines.at(-1) ?? '')) lines.pop();
+  state.raw = `${lines.join('\n').replace(/\s+$/, '')}\n\n**Alternativa: ${letter}**`;
+  renderAnalysis();
 }
 
 function setAnalysis(text) {

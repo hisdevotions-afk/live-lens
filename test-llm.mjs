@@ -112,4 +112,8 @@ assert.match(res[0].content, /Se houver RESOLUÇÃO, ela é exata: explique-a pa
 assert.match(res[1].content, /RESOLUÇÃO \(exata, feita em código\):\n\(1\) 3x - 9 = 0 → x = 3 → suficiente\n\(2\) x\^2 = 9 → x = -3 ou x = 3 → insuficiente\nResposta: A — /);
 assert.ok(res[1].content.endsWith('\nPERGUNTA: Se x é real, qual é x?'));
 assert.doesNotMatch(buildMessages({ snapshot: null, summary: null, question: 'Qual?', answer: true })[1].content, /RESOLUÇÃO/);
+
+// a alternativa vai no fim da explicação
+assert.match(ans[0].content, /Se os DADOS trouxerem alternativas \(A, B, C…\), termine com uma última linha "Alternativa: X"/);
+assert.match(ans[0].content, /Se a RESOLUÇÃO tiver "Resposta: X", a última linha deve ser "Alternativa: X"/);
 console.log('OK: todos os testes de llm.js passaram');

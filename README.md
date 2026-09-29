@@ -41,11 +41,16 @@ sudo systemctl restart ollama
 - **Fixar elemento:** clique no botão, passe o mouse na página e clique no elemento (Esc cancela). Clicar numa célula fixa a **tabela inteira**; **Shift+clique** fixa exatamente o elemento sob o mouse (ex.: um KPI dentro de uma célula). O painel acompanha as mudanças, mostra variação e sparkline, e reanalisa com o LLM no máximo a cada 15s (contados a partir do fim da análise anterior). Uma seleção sua tem prioridade na tela: o elemento fixado continua atualizando a variação e o gráfico, mas não troca a seleção que você está lendo até você fixar de novo.
 - **Pausar LLM:** fica só com as estatísticas.
 - **Pergunta:** digite no campo de baixo e aperte Enter.
+- **Selecionar uma pergunta** (ex.: "Quanto é 15% de R$ 1.234,56?" ou "Qual produto tem a maior receita?"): o painel entra no modo **Pergunta**.
+  - Se a pergunta tem uma **conta** (`X% de Y`, ou `+ - × ÷` com parênteses), o resultado aparece na hora na linha **Cálculo**, feito em código, exato e sem depender do LLM (funciona até com o LLM pausado).
+  - Se há um **elemento fixado**, a pergunta é respondida sobre os dados dele, com as estatísticas exatas no prompt. Sem elemento fixado, ela é respondida sozinha.
+  - Fixar outro elemento ou selecionar um texto comum volta ao modo análise.
 - **Modelo:** troque no campo "Modelo" (precisa de `ollama pull <modelo>` antes).
 
 ## Limitações conhecidas
 
 - **Injeção de prompt.** Os modelos locais pequenos seguem ordens escondidas no texto que você seleciona (testado: `qwen2.5:3b` obedece em parte, `qwen2.5:7b` obedece por completo, e um modelo maior não resolveu). O painel só mostra texto, sem ações, mas a análise pode ser enganada. Use em páginas em que você confia e trate a análise como sugestão; **as estatísticas são calculadas em código e não sofrem disso**.
+- **Cálculo.** O mini-calculador cobre `X% de Y` e cadeias com `+ - × ÷` e parênteses. Não entende palavras ("dividido por", "média de 10, 20 e 30") nem `15% de 200 + 10`; nesses casos ele não mostra o cálculo e só o LLM responde (menos confiável em contas).
 - **Precisão do LLM.** Ele pode apontar "outlier" onde não há (as estatísticas exatas ficam logo acima) ou trocar linhas da tabela. Confie nos números do bloco de estatísticas, não nos do texto.
 - **Velocidade.** Em CPU cada análise leva de ~10s a ~70s (a primeira, a frio, é a mais lenta; o 7b chega a ~85s). Com um elemento fixado, a nova análise só começa 15s depois de a anterior terminar.
 

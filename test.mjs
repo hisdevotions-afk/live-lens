@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   detectLocale, parseNumber, extractNumbers, describe,
-  tableColumns, summarize, delta, changedEnough,
+  tableColumns, summarize, delta, changedEnough, isQuestion, calc,
 } from './stats.js';
 
 // detectLocale
@@ -119,5 +119,32 @@ assert.equal(detectLocale('R$ 1.500', 'en'), 'pt');
 assert.equal(summarize({ text: 'R$ 1.500', table: null, lang: '' }).primary, 1500);
 assert.equal(summarize({ text: '1.500', table: null, lang: 'en' }, 'pt').primary, 1500);
 assert.equal(summarize({ text: '1.500', table: null, lang: 'en' }, 'pt').locale, 'pt');
+
+
+// --- modo pergunta ---
+// isQuestion: só perguntas curtas; frase comum que começa com "Como" não conta
+for (const q of ['Qual a receita total?', 'quanto é 15% de R$ 1.234,56?', 'Qual produto vende mais', 'Por que a receita caiu',
+  'O que significa esse número?', 'Receita subiu?', 'Quanto é R$ 1.234,56', '"A receita caiu?"']) assert.equal(isQuestion(q), true, q);
+for (const q of ['', '   ', 'Receita total R$ 1.234,56', 'Como resultado, a receita subiu 10%.', 'Qual a receita. Depois somamos.',
+  'a'.repeat(400) + '?', 'linha 1\nlinha 2\nlinha 3?', 'Qual ' + 'x'.repeat(200)]) assert.equal(isQuestion(q), false, q);
+
+// calc: conta feita em código (sem eval)
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+let c = calc('quanto é 15% de R$ 1.234,56?');
+assert.ok(c && near(c.value, 185.184) && c.expr === '15% de R$ 1.234,56', JSON.stringify(c));
+assert.equal(calc('Quanto é 20% de 50?').value, 10);
+assert.equal(calc('Quanto é 10 + 5 * 2?').value, 20);            // precedência
+assert.equal(calc('(100 - 20) / 4').value, 20);
+assert.equal(calc('12,5 x 4').value, 50);
+assert.equal(calc('3 × 4').value, 12);
+assert.equal(calc('R$ 1.000 - R$ 250').value, 750);
+assert.equal(calc('quanto é 1,5k + 500?').value, 2000);
+assert.equal(calc('quanto é 10/4?').value, 2.5);
+assert.ok(near(calc('1.234,56 + 10').value, 1244.56));
+assert.equal(calc('10 ÷ 4').value, 2.5);
+assert.equal(calc('Quanto é 15% de 200 + 10?'), null);   // conta composta com %: não calcula pela metade
+assert.equal(calc('15% de 200 e mais 10?').value, 30);
+for (const q of ['Qual a receita?', 'quanto é 10/0?', 'receita em 29/09/2026?', 'em 12/2025?', 'vendas de 98765-4321?',
+  'máximo de 5?', '2 xícaras de 3?', '2 + ', '(2 + 3', '']) assert.equal(calc(q), null, q);
 
 console.log('OK: todos os testes de stats.js passaram');

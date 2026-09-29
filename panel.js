@@ -1,4 +1,4 @@
-import { summarize, delta, changedEnough } from './stats.js';
+import { summarize, delta, changedEnough, isQuestion, calc, detectLocale } from './stats.js';
 import { analyze } from './llm.js';
 
 const LLM_WINDOW_MS = 15000; // pin: no máximo 1 análise do LLM a cada 15s
@@ -13,6 +13,9 @@ const state = {
   current: null,      // último snapshot recebido
   summary: null,      // summarize(current)
   history: [],        // valores primary do elemento fixado
+  pinSnap: null,      // último snapshot do elemento fixado (dados para responder perguntas)
+  pinSummary: null,
+  answer: null,       // modo pergunta: { question, calc } enquanto a seleção na tela for uma pergunta
   pinLocale: null,    // locale do 1º snapshot do pin (não muda enquanto o pin durar)
   liveDelta: null,    // delta(anterior, atual) do elemento fixado
   lastLlmAt: 0,       // início da última análise (só para exibir)
@@ -53,8 +56,14 @@ async function sendToTab(msg) {
 
 function resetLive() {
   state.history = [];
+  state.pinSnap = null;
+  state.pinSummary = null;
   state.pinLocale = null;
   state.liveDelta = null;
+  if (state.answer) {
+    state.summary = null; // a pergunta perdeu os dados do elemento fixado
+    renderStats();
+  }
   renderLive();
 }
 
@@ -100,6 +109,8 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     if (msg.reason === 'picked') {
       resetLive();
       state.current = null; // pin novo retoma a tela (uma seleção deixa de ter prioridade)
+      state.answer = null;
+      renderCalc();
     }
     if (!msg.pinned) {
       stopAuto();
@@ -115,7 +126,16 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 function onSnapshot(snap) {
   if (snap.source === 'selection') {
     state.current = snap;
-    state.summary = summarize(snap);
+    const q = isQuestion(snap.text) ? snap.text.trim() : null;
+    if (q) {
+      // Pergunta: o cálculo sai na hora (código); o LLM responde sobre o elemento fixado, se houver.
+      state.answer = { question: q, calc: calc(q, state.pinLocale ?? detectLocale(q, snap.lang)) };
+      state.summary = state.pinSummary;
+    } else {
+      state.answer = null;
+      state.summary = summarize(snap);
+    }
+    renderCalc();
     renderOrigin();
     renderStats();
     if (!state.paused) runLlm('', 'user');
@@ -131,6 +151,12 @@ function onSnapshot(snap) {
     if (state.history.length > HISTORY_MAX) state.history.shift();
   }
   renderLive();
+  state.pinSnap = snap;
+  state.pinSummary = summary;
+  if (state.answer) {
+    state.summary = summary;
+    renderStats();
+  }
   // ...mas não tira da tela uma seleção que o usuário está lendo.
   if (state.current?.source === 'selection') return;
   state.current = snap;
@@ -176,6 +202,7 @@ async function runLlm(question = '', kind = 'user') {
     setLlmStatus('Selecione algo na página primeiro.');
     return;
   }
+  const answer = state.answer;
   const controller = new AbortController();
   state.controller = controller;
   state.runKind = kind;
@@ -188,9 +215,11 @@ async function runLlm(question = '', kind = 'user') {
   $('analysis').textContent = '';
   setLlmStatus('analisando…');
   try {
-    const chunks = analyze({ model: state.model, snapshot: snap, summary: state.summary, question, signal: controller.signal });
+    const chunks = answer
+      ? analyze({ model: state.model, snapshot: state.pinSnap, summary: state.pinSummary, question: question || answer.question, answer: true, calc: question ? null : answer.calc, signal: controller.signal })
+      : analyze({ model: state.model, snapshot: snap, summary: state.summary, question, signal: controller.signal });
     for await (const chunk of chunks) $('analysis').textContent += chunk;
-    setLlmStatus(`análise de ${time(state.lastLlmAt)}`);
+    setLlmStatus(`${answer ? 'resposta' : 'análise'} de ${time(state.lastLlmAt)}`);
   } catch (e) {
     if (e.name === 'AbortError') return; // cancelamento é normal
     setLlmStatus(errorText(e.message));
@@ -232,7 +261,7 @@ $('question').addEventListener('keydown', (e) => {
 
 function renderOrigin() {
   const s = state.current;
-  const origem = s.source === 'pin' ? 'Elemento fixado' : 'Seleção';
+  const origem = state.answer ? 'Pergunta' : s.source === 'pin' ? 'Elemento fixado' : 'Seleção';
   $('origin').textContent = `${origem} · ${time(s.ts)} · ${s.title}`;
 }
 
@@ -247,9 +276,16 @@ function addRow(table, label, value) {
   tr.insertCell().textContent = value;
 }
 
+function renderCalc() {
+  const c = state.answer?.calc;
+  $('calc').hidden = !c;
+  $('calc').textContent = c ? `Cálculo: ${c.expr} = ${c.value.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}` : '';
+}
+
 function renderStats() {
   const box = $('stats');
   box.replaceChildren();
+  if (!state.summary) return; // pergunta sem elemento fixado: não há dados a resumir
   if (state.summary.groups.length === 0) {
     box.textContent = 'Sem números aqui.';
     return;

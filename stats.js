@@ -145,3 +145,79 @@ export function changedEnough(prev, curr, threshold = 0.01) {
   if (prev === 0) return curr !== 0;
   return Math.abs(curr - prev) / Math.abs(prev) > threshold;
 }
+
+// ---------- Modo pergunta ----------
+
+const WH = /^["'“(]*(qual|quais|quanto|quanta|quantos|quantas|como|quando|onde|aonde|quem|por\s?que|porque|o\s+que)\b/i;
+
+// Pergunta = curta e termina em "?", ou começa com palavra interrogativa sem outra pontuação de frase.
+export function isQuestion(text) {
+  const t = String(text).trim();
+  if (!t || t.length > 300 || t.split('\n').length > 2) return false;
+  if (/\?["'”)\]]*$/.test(t)) return true;
+  const semSeparadores = t.replace(/(?<=\d)[.,](?=\d)/g, ''); // 1.234,56 não é ponto final
+  return WH.test(t) && t.length <= 140 && !/[.!;]/.test(semSeparadores);
+}
+
+// Conta feita em código: "X% de Y" e cadeias com + - × ÷ e parênteses. Sem eval.
+const NUM = String.raw`(?:R\$|US\$|\$|€)?\s?\d[\d.,]*(?:\s?(?:mil|mi|bi|k|K|M|B)(?![A-Za-zÀ-ÿ]))?`;
+const OP = String.raw`(?:[+×÷*/x]|\s[-−]\s)`;
+const PCT_RE = new RegExp(`(${NUM})\\s*%\\s*(?:de|do|da|dos|das|sobre)\\s+(${NUM})`, 'i');
+const EXPR_RE = new RegExp(String.raw`(?:\(\s*)*${NUM}(?:\s*\))*(?:\s*${OP}\s*(?:\(\s*)*${NUM}(?:\s*\))*)+`);
+const TOKEN = new RegExp(String.raw`\s*(${NUM}|[+\-−×÷*/x()])`, 'y');
+const CALENDAR_RE = /\d{1,2}\/\d{1,2}\/\d{2,4}|\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2}/g; // datas não são divisões
+
+function evaluate(expr, locale) {
+  const toks = [];
+  TOKEN.lastIndex = 0;
+  for (let m; (m = TOKEN.exec(expr)); ) toks.push(m[1]);
+  let i = 0;
+  const factor = () => {
+    const t = toks[i++];
+    if (t === '(') {
+      const v = sum();
+      if (toks[i++] !== ')') throw new Error('parênteses');
+      return v;
+    }
+    const v = parseNumber(t ?? '', locale);
+    if (v === null) throw new Error('número');
+    return v;
+  };
+  const product = () => {
+    let v = factor();
+    while (['*', '×', 'x', '/', '÷'].includes(toks[i])) {
+      const op = toks[i++];
+      const r = factor();
+      v = op === '/' || op === '÷' ? v / r : v * r;
+    }
+    return v;
+  };
+  const sum = () => {
+    let v = product();
+    while (['+', '-', '−'].includes(toks[i])) v = toks[i++] === '+' ? v + product() : v - product();
+    return v;
+  };
+  const v = sum();
+  if (i !== toks.length) throw new Error('sobrou');
+  return v;
+}
+
+export function calc(text, locale = 'pt') {
+  const t = String(text).replace(CALENDAR_RE, ' ');
+  const pm = t.match(PCT_RE);
+  if (pm) {
+    const a = parseNumber(pm[1], locale);
+    const b = parseNumber(pm[2], locale);
+    const resto = t.slice(pm.index + pm[0].length);
+    if (/^\s*[+×÷*/x]|^\s[-−]\s/.test(resto)) return null; // "15% de 200 + 10": não calcula pela metade
+    if (a !== null && b !== null) return { expr: pm[0].trim(), value: (a / 100) * b };
+  }
+  const m = t.match(EXPR_RE);
+  if (!m) return null;
+  try {
+    const value = evaluate(m[0], locale);
+    return Number.isFinite(value) ? { expr: m[0].trim().replace(/\s+/g, ' '), value } : null;
+  } catch {
+    return null;
+  }
+}

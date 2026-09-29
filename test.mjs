@@ -98,4 +98,26 @@ assert.equal(changedEnough(100, 102), true);
 assert.equal(changedEnough(0, 0), false);
 assert.equal(changedEnough(0, 1), true);
 
+
+// --- correções da revisão final ---
+// I1: datas MM/AAAA e ISO não viram números; coluna de mês some
+assert.deepEqual(extractNumbers('12/2025', 'pt'), []);
+assert.deepEqual(extractNumbers('Em 2026-09-29 vendemos 15', 'pt'), [15]);
+assert.deepEqual(
+  tableColumns([['Mês', 'Receita'], ['01/2025', '1.000'], ['02/2025', '2.000']], 'pt').map((c) => c.name),
+  ['Receita'],
+);
+// I2: cabeçalho de anos só é cabeçalho se o snapshot disser (header=true); sem a dica, cai na heurística
+const yearTable = [['Produto', '2024', '2025'], ['A', '1.000', '2.000'], ['B', '3.000', '4.000']];
+const yc = tableColumns(yearTable, 'pt', true);
+assert.deepEqual(yc.map((c) => [c.name, c.stats.sum]), [['2024', 4000], ['2025', 6000]]);
+assert.equal(summarize({ text: 'x', table: yearTable, header: true, lang: 'pt' }).groups[0].stats.sum, 4000);
+assert.deepEqual(tableColumns([['1', 'x'], ['2', 'y']], 'pt', false).map((c) => c.stats.n), [2]); // header=false: 1ª linha é dado
+// I3: R$ é pt mesmo sem lang; locale pode ser forçado (o pin mantém o locale do 1º snapshot)
+assert.equal(detectLocale('R$ 1.500', ''), 'pt');
+assert.equal(detectLocale('R$ 1.500', 'en'), 'pt');
+assert.equal(summarize({ text: 'R$ 1.500', table: null, lang: '' }).primary, 1500);
+assert.equal(summarize({ text: '1.500', table: null, lang: 'en' }, 'pt').primary, 1500);
+assert.equal(summarize({ text: '1.500', table: null, lang: 'en' }, 'pt').locale, 'pt');
+
 console.log('OK: todos os testes de stats.js passaram');

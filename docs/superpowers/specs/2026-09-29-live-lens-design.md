@@ -240,7 +240,7 @@ Estado do painel: `current` (último snapshot), `lastLlmAt` (timestamp), `lastLl
 
 - **Todo snapshot:** recalcula stats e re-renderiza (sempre, sem limite).
 - **Snapshot `selection`:** aborta o LLM em andamento e inicia outro imediatamente.
-- **Snapshot `pin`:** inicia o LLM **somente se** `!paused` **e** `Date.now() - lastLlmAt >= 15000` **e** (`changedEnough(lastLlmPrimary, primary)` **ou** `primary === null` e o texto mudou). Senão, não faz nada, e o painel continua mostrando `análise de hh:mm:ss`.
+- **Snapshot `pin`:** inicia o LLM **somente se** `!paused` **e** `Date.now() - lastLlmEnd >= 15000` (a janela conta do **fim** da análise anterior; assim uma análise lenta nunca é interrompida nem apagada logo ao terminar) **e** (`changedEnough(lastLlmPrimary, primary)` **ou** `primary === null` e o texto mudou). Senão, não faz nada, e o painel continua mostrando `análise de hh:mm:ss`.
   - Um snapshot bloqueado pela janela de 15s fica guardado em `current`. Um `setTimeout` marcado para quando a janela abrir reavalia a regra com o `current` mais recente, para a última mudança não se perder.
 - **Pergunta / Reanalisar:** aborta e inicia imediatamente (ignora a janela de 15s e o pause).
 - **Pausado:** nenhum LLM automático. Só stats.

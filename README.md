@@ -38,7 +38,7 @@ sudo systemctl restart ollama
 
 - Clique no ícone do Live Lens para abrir o painel lateral.
 - **Selecione** texto ou células de uma tabela: as estatísticas aparecem na hora e a análise do LLM vem logo abaixo.
-- **Fixar elemento:** clique no botão, passe o mouse na página e clique no elemento (Esc cancela). O painel acompanha as mudanças, mostra variação e sparkline, e reanalisa com o LLM no máximo a cada 15s.
+- **Fixar elemento:** clique no botão, passe o mouse na página e clique no elemento (Esc cancela). Clicar numa célula fixa a **tabela inteira**; **Shift+clique** fixa exatamente o elemento sob o mouse (ex.: um KPI dentro de uma célula). O painel acompanha as mudanças, mostra variação e sparkline, e reanalisa com o LLM no máximo a cada 15s (contados a partir do fim da análise anterior). Uma seleção sua tem prioridade na tela: o elemento fixado continua atualizando a variação e o gráfico, mas não troca a seleção que você está lendo até você fixar de novo.
 - **Pausar LLM:** fica só com as estatísticas.
 - **Pergunta:** digite no campo de baixo e aperte Enter.
 - **Modelo:** troque no campo "Modelo" (precisa de `ollama pull <modelo>` antes).

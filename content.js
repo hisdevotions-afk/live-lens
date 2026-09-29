@@ -15,12 +15,13 @@ function send(msg) {
   }
 }
 
-function sendSnapshot(source, text, table) {
+function sendSnapshot(source, text, table, header) {
   send({
     type: 'snapshot',
     source,
     text,
     table,
+    header,
     url: location.href,
     title: document.title,
     lang: document.documentElement.lang || '',
@@ -37,15 +38,22 @@ function labelOf(el) {
 
 // ---------- Seleção ----------
 
+// Linhas de dados: a linha de totais (tfoot) fica de fora para não dobrar somas.
+const dataRows = (table) => [...table.rows].filter((tr) => tr.parentElement.tagName !== 'TFOOT');
+// Cabeçalho de verdade = thead ou 1ª linha só de <th>. Sem isso, a 1ª linha é dado.
+const hasHeader = (table) => !!table.tHead || (!!table.rows[0] && [...table.rows[0].cells].every((c) => c.tagName === 'TH'));
+const gridOf = (table) => dataRows(table).map((tr) => [...tr.cells].map((c) => c.innerText.trim()));
+
 function tableFromSelection(range) {
   let node = range.commonAncestorContainer;
   if (node.nodeType !== Node.ELEMENT_NODE) node = node.parentElement;
   const table = node?.closest('table');
   if (!table) return null;
+  const all = dataRows(table);
   // 1ª passada: quais linhas e colunas a seleção toca.
   const hit = [];
   const cols = new Set();
-  for (const tr of table.rows) {
+  for (const tr of all) {
     const cells = [...tr.cells].filter((c) => range.intersectsNode(c));
     if (cells.length === 0) continue;
     cells.forEach((c) => cols.add(c.cellIndex));
@@ -59,10 +67,10 @@ function tableFromSelection(range) {
     const c = tr.cells[i];
     return c && range.intersectsNode(c) ? c.innerText.trim() : '';
   };
-  const rows = hit.map((tr) => idx.map((i) => cellText(tr, i)));
-  const header = table.rows[0];
-  if (!hit.includes(header)) rows.unshift(idx.map((i) => header.cells[i]?.innerText.trim() ?? ''));
-  return rows;
+  const grid = hit.map((tr) => idx.map((i) => cellText(tr, i)));
+  const header = hasHeader(table);
+  if (header && !hit.includes(all[0])) grid.unshift(idx.map((i) => all[0].cells[i]?.innerText.trim() ?? ''));
+  return { grid, header };
 }
 
 let lastSelText = '';
@@ -77,7 +85,8 @@ function onSelection() {
   const text = sel.toString().trim();
   if (!text || text === lastSelText) return;
   lastSelText = text;
-  sendSnapshot('selection', text, tableFromSelection(sel.getRangeAt(0)));
+  const t = tableFromSelection(sel.getRangeAt(0));
+  sendSnapshot('selection', text, t?.grid ?? null, t?.header ?? false);
 }
 
 document.addEventListener('selectionchange', () => {
@@ -95,6 +104,9 @@ let aliveTimer = null;
 let pinTimer = null;
 let lastPinText = '';
 
+// A página não pode reagir ao clique de fixar (botões costumam agir em pointerdown/mouseup).
+const BLOCKED = ['pointerdown', 'pointerup', 'mousedown', 'mouseup'];
+
 function onHover(e) {
   hovered?.classList.remove('ll-hover');
   hovered = e.target;
@@ -108,7 +120,8 @@ function blockEvent(e) {
 
 function onPickClick(e) {
   blockEvent(e);
-  const el = e.target;
+  // Clicar numa célula fixa a tabela toda; Shift+clique fixa o elemento exato.
+  const el = e.shiftKey ? e.target : (e.target.closest('td,th,tr,thead,tbody,tfoot')?.closest('table') ?? e.target);
   stopPick();
   pin(el);
 }
@@ -123,7 +136,7 @@ function startPick() {
   stopPick();
   picking = true;
   document.addEventListener('mouseover', onHover, true);
-  document.addEventListener('mousedown', blockEvent, true);
+  for (const t of BLOCKED) document.addEventListener(t, blockEvent, true);
   document.addEventListener('click', onPickClick, true);
   document.addEventListener('keydown', onPickKey, true);
 }
@@ -133,7 +146,7 @@ function stopPick() {
   hovered?.classList.remove('ll-hover');
   hovered = null;
   document.removeEventListener('mouseover', onHover, true);
-  document.removeEventListener('mousedown', blockEvent, true);
+  for (const t of BLOCKED) document.removeEventListener(t, blockEvent, true);
   document.removeEventListener('click', onPickClick, true);
   document.removeEventListener('keydown', onPickKey, true);
 }
@@ -144,12 +157,11 @@ function checkPin() {
     unpin('removed');
     return;
   }
-  const text = pinned.innerText.trim();
+  const text = (pinned.innerText ?? pinned.textContent ?? '').trim();
   if (text === lastPinText) return;
   lastPinText = text;
   const table = pinned.tagName === 'TABLE' ? pinned : pinned.querySelector('table');
-  const grid = table ? [...table.rows].map((tr) => [...tr.cells].map((c) => c.innerText.trim())) : null;
-  sendSnapshot('pin', text, grid);
+  sendSnapshot('pin', text, table ? gridOf(table) : null, table ? hasHeader(table) : false);
 }
 
 function pin(el) {

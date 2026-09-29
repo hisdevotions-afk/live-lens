@@ -13,11 +13,15 @@ const state = {
   current: null,      // último snapshot recebido
   summary: null,      // summarize(current)
   history: [],        // valores primary do elemento fixado
+  pinLocale: null,    // locale do 1º snapshot do pin (não muda enquanto o pin durar)
   liveDelta: null,    // delta(anterior, atual) do elemento fixado
-  lastLlmAt: 0,
+  lastLlmAt: 0,       // início da última análise (só para exibir)
+  lastLlmEnd: 0,      // fim da última análise: a janela de 15s conta a partir daqui
   lastLlmPrimary: null,
   lastLlmText: '',
   controller: null,   // AbortController do LLM em andamento
+  busy: false,        // há análise do LLM em andamento
+  runKind: null,      // 'pin' (automática) | 'user' (seleção, pergunta, reanalisar)
   pendingTimer: null, // reavaliação quando a janela de 15s abrir
   paused: false,
   model: DEFAULT_MODEL,
@@ -49,6 +53,7 @@ async function sendToTab(msg) {
 
 function resetLive() {
   state.history = [];
+  state.pinLocale = null;
   state.liveDelta = null;
   renderLive();
 }
@@ -59,6 +64,7 @@ function renderPin(pinned, label) {
 }
 
 async function refreshPinState() {
+  stopAuto();
   const r = await sendToTab({ type: 'get-state' });
   if (!r) return;
   renderPin(r.pinned, r.label);
@@ -75,11 +81,30 @@ chrome.tabs.onActivated.addListener(({ windowId }) => {
   if (windowId === myWindowId) refreshPinState();
 });
 
+// Recarregar ou navegar destrói o content script (e o pin com ele); nenhum pin-state chega.
+chrome.tabs.onUpdated.addListener((_id, info, tab) => {
+  if (!tab.active || tab.windowId !== myWindowId) return;
+  if (info.status === 'loading') {
+    stopAuto();
+    renderPin(false, '');
+    resetLive();
+  } else if (info.status === 'complete') {
+    refreshPinState();
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!sender.tab?.active || sender.tab.windowId !== myWindowId) return;
   if (msg.type === 'pin-state') {
     renderPin(msg.pinned, msg.label);
-    if (msg.reason === 'picked' || !msg.pinned) resetLive();
+    if (msg.reason === 'picked') {
+      resetLive();
+      state.current = null; // pin novo retoma a tela (uma seleção deixa de ter prioridade)
+    }
+    if (!msg.pinned) {
+      stopAuto();
+      resetLive();
+    }
     if (msg.reason === 'removed') $('pin-status').textContent = 'Elemento sumiu da página. Desfixado.';
   }
   if (msg.type === 'snapshot') onSnapshot(msg);
@@ -88,43 +113,62 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 // ---------- Snapshot → stats → LLM ----------
 
 function onSnapshot(snap) {
-  state.current = snap;
-  state.summary = summarize(snap);
-  const primary = state.summary.primary;
-  if (snap.source === 'pin' && primary !== null) {
+  if (snap.source === 'selection') {
+    state.current = snap;
+    state.summary = summarize(snap);
+    renderOrigin();
+    renderStats();
+    if (!state.paused) runLlm('', 'user');
+    return;
+  }
+  // Pin: sempre alimenta histórico e variação...
+  const summary = summarize(snap, state.pinLocale ?? undefined);
+  state.pinLocale ??= summary.locale;
+  if (summary.primary !== null) {
     const prev = state.history.at(-1);
-    state.liveDelta = prev === undefined ? null : delta(prev, primary);
-    state.history.push(primary);
+    state.liveDelta = prev === undefined ? null : delta(prev, summary.primary);
+    state.history.push(summary.primary);
     if (state.history.length > HISTORY_MAX) state.history.shift();
   }
+  renderLive();
+  // ...mas não tira da tela uma seleção que o usuário está lendo.
+  if (state.current?.source === 'selection') return;
+  state.current = snap;
+  state.summary = summary;
   renderOrigin();
   renderStats();
-  renderLive();
-  if (snap.source === 'selection') {
-    if (!state.paused) runLlm();
-  } else {
-    maybeRunLlmForPin();
+  maybeRunLlmForPin();
+}
+
+// Cancela só o que é automático (pin); análise pedida pelo usuário segue.
+function stopAuto() {
+  clearTimeout(state.pendingTimer);
+  if (state.busy && state.runKind === 'pin') {
+    state.controller?.abort();
+    setLlmStatus('cancelado');
   }
+  if (state.current?.source === 'pin') state.current = null;
 }
 
 function maybeRunLlmForPin() {
   clearTimeout(state.pendingTimer);
   const snap = state.current;
   if (state.paused || !snap || snap.source !== 'pin') return;
+  if (state.busy) return; // não interrompe análise em andamento; o finally de runLlm reavalia
   const primary = state.summary.primary;
   const changed = primary === null
     ? snap.text !== state.lastLlmText
     : changedEnough(state.lastLlmPrimary, primary);
   if (!changed) return;
-  const wait = LLM_WINDOW_MS - (Date.now() - state.lastLlmAt);
+  const wait = LLM_WINDOW_MS - (Date.now() - state.lastLlmEnd);
   if (wait > 0) {
     state.pendingTimer = setTimeout(maybeRunLlmForPin, wait);
     return;
   }
-  runLlm();
+  runLlm('', 'pin');
 }
 
-async function runLlm(question = '') {
+async function runLlm(question = '', kind = 'user') {
   clearTimeout(state.pendingTimer);
   state.controller?.abort();
   const snap = state.current;
@@ -134,9 +178,13 @@ async function runLlm(question = '') {
   }
   const controller = new AbortController();
   state.controller = controller;
+  state.runKind = kind;
+  state.busy = true;
   state.lastLlmAt = Date.now();
-  state.lastLlmPrimary = state.summary.primary;
-  state.lastLlmText = snap.text;
+  if (kind === 'pin') {
+    state.lastLlmPrimary = state.summary.primary;
+    state.lastLlmText = snap.text;
+  }
   $('analysis').textContent = '';
   setLlmStatus('analisando…');
   try {
@@ -146,6 +194,12 @@ async function runLlm(question = '') {
   } catch (e) {
     if (e.name === 'AbortError') return; // cancelamento é normal
     setLlmStatus(errorText(e.message));
+  } finally {
+    if (state.controller === controller) {
+      state.busy = false;
+      state.lastLlmEnd = Date.now();
+      maybeRunLlmForPin(); // mudanças que chegaram durante a análise
+    }
   }
 }
 

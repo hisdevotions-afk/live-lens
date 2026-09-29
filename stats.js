@@ -12,11 +12,12 @@ const TOKEN_RE = new RegExp(
   `(?<![\\w.,])\\(?[-−]?\\s?(?:R\\$|US\\$|\\$|€)?\\s?[-−]?\\d[\\d.,]*(?:\\s?(?:${SUFFIX})(?![A-Za-zÀ-ÿ]))?\\)?`,
   'g',
 );
-const DATE_RE = /\d{1,4}[\/:]\d{1,2}(?:[\/:]\d{1,4})?/g;
+const DATE_RE = /\d{4}-\d{2}-\d{2}|\d{1,4}[\/:]\d{1,4}(?:[\/:]\d{1,4})?/g;
 
 export function detectLocale(text, lang = '') {
   if (/\d\.\d{3},\d/.test(text)) return 'pt';
   if (/\d,\d{3}\.\d/.test(text)) return 'en';
+  if (/R\$/.test(text)) return 'pt';
   return lang.toLowerCase().startsWith('pt') ? 'pt' : 'en';
 }
 
@@ -103,10 +104,11 @@ function firstNumber(cell, locale) {
   return nums.length ? nums[0] : null;
 }
 
-export function tableColumns(table, locale = 'pt') {
+// header: true/false vem do DOM (thead/th); undefined = adivinha pelo conteúdo.
+export function tableColumns(table, locale = 'pt', header) {
   if (!Array.isArray(table) || table.length === 0) return [];
   const first = table[0];
-  const hasHeader = first.every((c) => firstNumber(c, locale) === null);
+  const hasHeader = header ?? first.every((c) => firstNumber(c, locale) === null);
   const rows = hasHeader ? table.slice(1) : table;
   const width = Math.max(...table.map((r) => r.length));
   const out = [];
@@ -120,10 +122,11 @@ export function tableColumns(table, locale = 'pt') {
   return out;
 }
 
-export function summarize(snapshot) {
+// forcedLocale: o painel trava o locale do 1º snapshot de um pin, para o delta não pular de escala.
+export function summarize(snapshot, forcedLocale) {
   const text = snapshot.text ?? '';
-  const locale = detectLocale(text, snapshot.lang ?? '');
-  let groups = snapshot.table ? tableColumns(snapshot.table, locale) : [];
+  const locale = forcedLocale ?? detectLocale(text, snapshot.lang ?? '');
+  let groups = snapshot.table ? tableColumns(snapshot.table, locale, snapshot.header) : [];
   if (groups.length === 0) {
     const stats = describe(extractNumbers(text, locale));
     groups = stats ? [{ name: 'Números', stats }] : [];

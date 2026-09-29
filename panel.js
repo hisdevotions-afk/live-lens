@@ -1,5 +1,6 @@
 import { summarize, delta, changedEnough, splitQuestion, calc, detectLocale, cleanMath, looksLikeMath } from './stats.js';
 import { analyze } from './llm.js';
+import { resolve } from './algebra.js';
 
 const LLM_WINDOW_MS = 15000; // pin: no máximo 1 análise do LLM a cada 15s
 const HISTORY_MAX = 50;      // pontos da sparkline
@@ -142,6 +143,7 @@ function newAnswer(question, data, lang = '') {
     calc: calc(question, state.pinLocale ?? detectLocale(question, lang)),
     data,
     dataSummary: data ? (looksLikeMath(data.text) ? { locale: 'pt', groups: [], primary: null } : summarize(data)) : null,
+    resolution: resolve(question, data ? data.text : ''), // equações e suficiência de dados resolvidas em código
   };
 }
 
@@ -150,7 +152,7 @@ function newTypedAnswer(question) {
   const cur = state.current;
   const data = state.answer ? state.answer.data : cur?.source === 'selection' ? cur : null;
   state.answer = newAnswer(question, data, cur?.lang);
-  setDebug({ modo: 'pergunta digitada', pergunta: question, dados: data ? data.text : cur?.source === 'pin' ? '(elemento fixado)' : null });
+  setDebug({ modo: 'pergunta digitada', pergunta: question, dados: data ? data.text : cur?.source === 'pin' ? '(elemento fixado)' : null, resolucao: state.answer.resolution?.lines });
   state.summary = data ? (state.answer.dataSummary) : state.pinSummary;
   renderCalc();
   renderOrigin();
@@ -181,6 +183,7 @@ function onSnapshot(snap) {
       tabela: !!snap.table,
       visual: snap.visual,
       html: snap.html, // estrutura real da página, para diagnosticar leituras estranhas
+      resolucao: state.answer?.resolution?.lines,
     });
     renderCalc();
     renderOrigin();
@@ -244,7 +247,7 @@ function maybeRunLlmForPin() {
   runLlm('', 'pin');
 }
 
-async function runLlm(question = '', kind = 'user') {
+async function runLlm(question = '', kind = 'user', force = false) {
   clearTimeout(state.pendingTimer);
   state.controller?.abort();
   if (question) newTypedAnswer(question); // pergunta digitada no painel
@@ -252,6 +255,15 @@ async function runLlm(question = '', kind = 'user') {
   const answer = state.answer;
   if (!snap && !answer) {
     setLlmStatus('Selecione algo na página ou digite uma pergunta.');
+    return;
+  }
+  if (answer?.resolution?.complete && !force) {
+    // Já resolvido em código (exato): o LLM só entra se o usuário pedir a explicação (Reanalisar).
+    state.busy = false;
+    $('asked').hidden = false;
+    $('asked').textContent = answer.question;
+    setAnalysis('');
+    setLlmStatus('resolvido em código');
     return;
   }
   const controller = new AbortController();
@@ -269,7 +281,7 @@ async function runLlm(question = '', kind = 'user') {
   setLlmStatus('analisando…');
   try {
     const chunks = answer
-      ? analyze({ model: state.model, snapshot: answer.data ?? state.pinSnap, summary: answer.dataSummary ?? state.pinSummary, question: answer.question, answer: true, calc: answer.calc, signal: controller.signal })
+      ? analyze({ model: state.model, snapshot: answer.data ?? state.pinSnap, summary: answer.dataSummary ?? state.pinSummary, question: answer.question, answer: true, calc: answer.calc, resolution: answer.resolution?.lines, signal: controller.signal })
       : analyze({ model: state.model, snapshot: snap, summary: state.summary, question, signal: controller.signal });
     for await (const chunk of chunks) appendAnalysis(chunk);
     setLlmStatus(`${answer ? 'resposta' : 'análise'} de ${time(state.lastLlmAt)}`);
@@ -295,7 +307,7 @@ function errorText(code) {
 // Estado visual do resultado a partir do texto (o texto em si é o contrato com os testes e o usuário).
 function setLlmStatus(text) {
   const el = $('llm-status');
-  const kind = /…$/.test(text) ? 'busy' : /^(análise|resposta) de /.test(text) ? 'done' : /^(Ollama|Modelo|Erro)/.test(text) ? 'error' : 'idle';
+  const kind = /…$/.test(text) ? 'busy' : /^(análise|resposta) de |^resolvido em código/.test(text) ? 'done' : /^(Ollama|Modelo|Erro)/.test(text) ? 'error' : 'idle';
   const cmd = kind === 'error' ? text.match(/^(.*?Rode: )(.+)$/) : null; // comando vira <code> copiável
   el.replaceChildren();
   if (cmd) {
@@ -366,7 +378,7 @@ $('pause').addEventListener('click', () => {
     setLlmStatus('pausado');
   }
 });
-$('rerun').addEventListener('click', () => runLlm());
+$('rerun').addEventListener('click', () => runLlm('', 'user', true));
 
 function sendQuestion() {
   const q = $('question').value.trim();
@@ -439,12 +451,24 @@ function renderOrigin() {
 const METRICS = [['sum', 'soma'], ['mean', 'média'], ['median', 'mediana'], ['min', 'mín'], ['max', 'máx'], ['stdev', 'desvio']];
 
 function renderCalc() {
+  const res = state.answer?.resolution;
   const c = state.answer?.calc;
   const box = $('calc');
-  box.hidden = !c;
+  box.hidden = !(res || c);
   box.replaceChildren();
-  if (c) {
-    const part = (cls, text) => Object.assign(document.createElement('span'), { className: cls, textContent: text });
+  const part = (cls, text) => Object.assign(document.createElement('span'), { className: cls, textContent: text });
+  if (res) {
+    box.append(part('lbl', 'Resolução (feita em código)'));
+    for (const line of res.lines) {
+      box.append('\n');
+      if (line.startsWith('Resposta:')) {
+        const [head, ...tail] = line.split(' — ');
+        box.append(part('answer', head), part('dash', ' — '), part('why', tail.join(' — ')));
+      } else {
+        box.append(part('line', line));
+      }
+    }
+  } else if (c) {
     box.append(part('lbl', 'Cálculo:'), ' ', part('expr', c.expr), ' = ', part('val', c.value.toLocaleString('pt-BR', { maximumFractionDigits: 4 })));
   }
   syncView();

@@ -104,6 +104,10 @@
   #calc { background: var(--accent-bg); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 10px; padding: 10px 12px; font-variant-numeric: tabular-nums; }
   #calc .lbl { display: block; font-size: .75rem; color: var(--accent-text); font-weight: 600; }
   #calc .expr { color: var(--muted); overflow-wrap: anywhere; }
+  #calc .line { display: block; overflow-wrap: anywhere; }
+  #calc .answer { display: block; margin-top: 6px; font-size: 1.5rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; }
+  #calc .why { display: block; color: var(--muted); }
+  #calc .dash { display: none; }
   #calc .val { display: block; font-size: 1.5rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; }
 
   #live { display: grid; gap: 4px; }
@@ -221,7 +225,7 @@
       <div class="bar">
         <div id="llm-status" role="status">aguardando dados</div>
         <button id="copy" class="ghost" hidden title="Copiar comando"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h8"/></svg>Copiar</button>
-        <button id="rerun" class="ghost" title="Analisar de novo"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 5v6h-6"/></svg>Reanalisar</button>
+        <button id="rerun" class="ghost" title="Pedir ao LLM uma análise ou explicação"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 5v6h-6"/></svg>Reanalisar</button>
       </div>
       <p id="asked" hidden></p>
       <div id="analysis" aria-busy="false"></div>

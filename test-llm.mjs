@@ -104,4 +104,12 @@ const mathMsgs = buildMessages({ snapshot: { ...snap, text: '(1) 3x - 9 = 0 (2) 
 assert.doesNotMatch(mathMsgs[1].content, /ESTATÍSTICAS/);
 assert.match(mathMsgs[1].content, /DADOS:\n<<<\n\(1\) 3x - 9 = 0 \(2\) x\^2 = 9\n>>>/);
 assert.match(mathMsgs[0].content, /avalie cada afirmação numerada sozinha/);
+
+// resolução exata feita em código entra no prompt como fato
+const res = buildMessages({ snapshot: { ...snap, text: '(1) 3x - 9 = 0 (2) x^2 = 9' }, summary: mathSummary, question: 'Se x é real, qual é x?', answer: true,
+  resolution: ['(1) 3x - 9 = 0 → x = 3 → suficiente', '(2) x^2 = 9 → x = -3 ou x = 3 → insuficiente', 'Resposta: A — A declaração (1) sozinha é suficiente, mas a declaração (2) sozinha não é suficiente.'] });
+assert.match(res[0].content, /Se houver RESOLUÇÃO, ela é exata: explique-a passo a passo, sem contradizê-la/);
+assert.match(res[1].content, /RESOLUÇÃO \(exata, feita em código\):\n\(1\) 3x - 9 = 0 → x = 3 → suficiente\n\(2\) x\^2 = 9 → x = -3 ou x = 3 → insuficiente\nResposta: A — /);
+assert.ok(res[1].content.endsWith('\nPERGUNTA: Se x é real, qual é x?'));
+assert.doesNotMatch(buildMessages({ snapshot: null, summary: null, question: 'Qual?', answer: true })[1].content, /RESOLUÇÃO/);
 console.log('OK: todos os testes de llm.js passaram');

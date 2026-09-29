@@ -171,7 +171,16 @@ function onSnapshot(snap) {
       state.answer = null;
       state.summary = summarize(snap);
     }
-    setDebug({ modo: sq ? 'pergunta' : 'análise', textoOriginal, textoLimpo: snap.text, pergunta: sq?.question ?? null, dados: sq ? sq.rest : null, tabela: !!snap.table });
+    setDebug({
+      modo: sq ? 'pergunta' : 'análise',
+      textoNavegador: snap.raw !== undefined && snap.raw !== textoOriginal ? snap.raw : undefined, // o que selection.toString() deu, se a extensão leu outra coisa do DOM
+      textoOriginal,
+      textoLimpo: snap.text,
+      pergunta: sq?.question ?? null,
+      dados: sq ? sq.rest : null,
+      tabela: !!snap.table,
+      visual: snap.visual,
+    });
     renderCalc();
     renderOrigin();
     renderStats();

@@ -229,14 +229,15 @@ const Q_MARK = /^([\s\S]*?\?["'”)\]]*)(?![\w.%-]+=)([\s\S]*)$/;
 // Limpa LaTeX colado como texto (\( \) \[ \] \times \frac...). Sem marcas de LaTeX, devolve o texto intacto.
 export function cleanMath(text) {
   const t = String(text);
-  if (!/\\[\[\]()a-zA-Z]/.test(t)) return t;
+  if (!/\\[\[\]()a-zA-Z]|[\^_]\{/.test(t)) return t;
   return t
     .replace(/\\(?:left|right)\b/g, '')
     .replace(/\\(?:text|mathrm|mathbf)\{([^{}]*)\}/g, '$1')
     .replace(/\\\\[ \t]*\n?/g, '\n') // \\ de fim de linha do LaTeX
     .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '($1)/($2)')
     .replace(/\\sqrt\{([^{}]*)\}/g, '√($1)')
-    .replace(/\^\{([^{}]*)\}/g, '^$1')
+    .replace(/\\(?:displaystyle|textstyle|,|;|!)/g, '')
+    .replace(/([\^_])\{([^{}]*)\}/g, '$1$2')
     .replace(/\\times\b|\\cdot\b/g, '×')
     .replace(/\\div\b/g, '÷')
     .replace(/\\leq?\b/g, '≤')
@@ -244,6 +245,7 @@ export function cleanMath(text) {
     .replace(/\\neq?\b/g, '≠')
     .replace(/\\pm\b/g, '±')
     .replace(/\\[\[\]()]/g, ' ')
+    .replace(/[{}]/g, '')
     .replace(/[ \t]+/g, ' ')
     .replace(/ +([?,;:.])/g, '$1')
     .replace(/\?(?=\()/g, '? ')

@@ -46,6 +46,7 @@ sudo systemctl restart ollama
   - Se a pergunta tem uma **conta** (`X% de Y`, ou `+ - × ÷` com parênteses), o resultado aparece na hora na linha **Cálculo**, feito em código, exato e sem depender do LLM (funciona até com o LLM pausado).
   - Se há um **elemento fixado**, a pergunta é respondida sobre os dados dele, com as estatísticas exatas no prompt. Sem elemento fixado, ela é respondida sozinha.
   - Se você seleciona **dados e a pergunta juntos** (ex.: uma tabela mais uma linha "Qual cliente mora em Natal?"), a pergunta é separada e o resto da seleção vira os dados.
+  - **Fórmulas renderizadas** (MathJax, KaTeX, MathJax v2 e imagens com `alt` em TeX, como na Wikipédia) são lidas do DOM da página. O navegador não inclui a fórmula no texto selecionado (só deixa quebras de linha), por isso a extensão a busca no MathML/anotação TeX.
   - Funciona com **problemas de matemática e lógica** colados com LaTeX (`\( 3x - 9 = 0 \)`, `\[ x^2 = 9 \]`): a pergunta pode estar no meio do texto ("…qual é o valor de x? (1) … (2) …"), o LaTeX vira símbolos legíveis (também na resposta) e as estatísticas, sem sentido nesse caso, são omitidas.
   - Pergunta que os dados não cobrem é respondida com o conhecimento geral do modelo, avisando "Isto não está nos dados:". Sem nenhum dado, responde normalmente.
   - Fixar outro elemento ou selecionar um texto comum volta ao modo análise.
@@ -59,6 +60,7 @@ sudo systemctl restart ollama
 
 ## Limitações conhecidas
 
+- **Fórmulas que são só imagem ou canvas** (sem `alt`, sem MathML) não têm texto para ler; nesses casos o Diagnóstico mostra `visual` com a contagem de `img`/`svg`/`canvas` da seleção. Ler a imagem exigiria um modelo de visão no Ollama (não implementado).
 - **Injeção de prompt.** Os modelos locais pequenos seguem ordens escondidas no texto que você seleciona (testado: `qwen2.5:3b` obedece em parte, `qwen2.5:7b` obedece por completo, e um modelo maior não resolveu). O painel só mostra texto, sem ações, mas a análise pode ser enganada. Use em páginas em que você confia e trate a análise como sugestão; **as estatísticas são calculadas em código e não sofrem disso**.
 - **Cálculo.** O mini-calculador cobre `X% de Y` e cadeias com `+ - × ÷` e parênteses. Não entende palavras ("dividido por", "média de 10, 20 e 30") nem `15% de 200 + 10`; nesses casos ele não mostra o cálculo e só o LLM responde (menos confiável em contas).
 - **Precisão do LLM.** Ele pode apontar "outlier" onde não há (as estatísticas exatas ficam logo acima) ou trocar linhas da tabela. Confie nos números do bloco de estatísticas, não nos do texto.

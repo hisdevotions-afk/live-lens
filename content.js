@@ -15,13 +15,14 @@ function send(msg) {
   }
 }
 
-function sendSnapshot(source, text, table, header) {
+function sendSnapshot(source, text, table, header, extra = {}) {
   send({
     type: 'snapshot',
     source,
     text,
     table,
     header,
+    ...extra,
     url: location.href,
     title: document.title,
     lang: document.documentElement.lang || '',
@@ -73,6 +74,94 @@ function tableFromSelection(range) {
   return { grid, header };
 }
 
+// ---------- Texto da seleção, com a matemática ----------
+// Renderizadores de fórmulas (MathJax, KaTeX, imagens) deixam a fórmula FORA do texto selecionado:
+// selection.toString() devolve só quebras de linha no lugar dela. A fórmula continua no DOM
+// (MathML assistivo, anotação TeX, alt da imagem); aqui ela é lida de lá.
+
+const BLOCK = new Set(['P', 'DIV', 'LI', 'UL', 'OL', 'DL', 'DT', 'DD', 'TR', 'TABLE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+  'BLOCKQUOTE', 'PRE', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'FIGURE', 'HR']);
+const MO_SPACED = new Set(['=', '+', '-', '×', '÷', '<', '>', '≤', '≥', '≠', '±', '≈', '·', '*', '/']);
+const MATHY_ALT = /[=^_\\{}]/; // alt de imagem que parece fórmula (ex.: Wikipedia: {\displaystyle x^{2}})
+
+// MathML → texto simples: 3x − 9 = 0, x^2, (a)/(b), √(x)
+function mml(el) {
+  const kids = () => [...el.children].map(mml);
+  const wrap = (t) => (t.length > 1 ? `(${t})` : t);
+  switch (el.localName) {
+    case 'annotation':
+    case 'annotation-xml':
+      return '';
+    case 'mfrac': { const [a = '', b = ''] = kids(); return `(${a})/(${b})`; }
+    case 'msqrt': return `√(${kids().join('')})`;
+    case 'msup': { const [a = '', b = ''] = kids(); return `${a}^${wrap(b)}`; }
+    case 'msub': { const [a = '', b = ''] = kids(); return `${a}_${wrap(b)}`; }
+    default: {
+      if (!el.children.length) return el.textContent.trim();
+      let out = '';
+      [...el.children].forEach((c, i, all) => {
+        if (c.localName !== 'mo') { out += mml(c); return; }
+        const op = c.textContent.trim().replace('−', '-');
+        const prev = all[i - 1];
+        const unary = (op === '-' || op === '+') && (!prev || prev.localName === 'mo'); // "x = -3"
+        out += MO_SPACED.has(op) && !unary ? ` ${op} ` : op;
+      });
+      return out;
+    }
+  }
+}
+
+function mathText(n) {
+  const tex = n.querySelector?.('annotation[encoding="application/x-tex"]'); // KaTeX: TeX limpo
+  if (tex) return tex.textContent.trim();
+  const m = n.localName === 'math' ? n : n.querySelector?.('math'); // MathJax: MathML assistivo
+  if (m) return mml(m).trim();
+  return (n.getAttribute?.('aria-label') || n.textContent || '').trim();
+}
+
+function walk(n, out) {
+  if (n.nodeType === Node.TEXT_NODE) { out.push(n.nodeValue); return; }
+  if (n.nodeType !== Node.ELEMENT_NODE && n.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
+  const tag = n.localName;
+  if (tag === 'script') { if (/^math\/tex/.test(n.type)) out.push(' ', n.textContent.trim(), ' '); return; } // MathJax v2
+  if (tag === 'style' || tag === 'noscript') return;
+  if (tag === 'mjx-container' || tag === 'math' || n.classList?.contains('katex')) { out.push(' ', mathText(n), ' '); return; }
+  if (n.classList?.contains('MathJax') || n.classList?.contains('MathJax_Preview')) return; // v2: vale o <script> ao lado
+  if (tag === 'img') { const alt = n.getAttribute('alt') || ''; if (MATHY_ALT.test(alt)) out.push(' ', alt, ' '); return; }
+  if (tag === 'br') { out.push('\n'); return; }
+  const block = BLOCK.has(n.tagName);
+  if (block) out.push('\n');
+  for (const c of n.childNodes) walk(c, out);
+  if (block) out.push('\n');
+  else if (tag === 'td' || tag === 'th') out.push('\t');
+}
+
+// Conta o que a seleção tem de "visual": também alimenta o Diagnóstico do painel.
+function describeVisual(frag) {
+  const count = (sel) => frag.querySelectorAll(sel).length;
+  const mathImg = [...frag.querySelectorAll('img[alt]')].filter((i) => MATHY_ALT.test(i.getAttribute('alt'))).length;
+  return {
+    mjx: count('mjx-container'), katex: count('.katex'), math: count('math'), tex: count('script[type^="math/tex"]'),
+    mathImg, img: count('img'), svg: count('svg'), canvas: count('canvas'),
+  };
+}
+
+function selectionText(range, raw) {
+  const frag = range.cloneContents();
+  const visual = describeVisual(frag);
+  if (!(visual.mjx || visual.katex || visual.math || visual.tex || visual.mathImg)) return { text: raw, visual };
+  const parts = [];
+  walk(frag, parts);
+  const text = parts.join('')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ +([?,;:.!])/g, '$1') // "x ?" → "x?"
+    .replace(/\( +/g, '(').replace(/ +\)/g, ')')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+  return { text, visual };
+}
+
 let lastSelText = '';
 let selTimer;
 
@@ -82,11 +171,13 @@ function onSelection() {
   if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
   const sel = document.getSelection();
   if (!sel || sel.rangeCount === 0) return;
-  const text = sel.toString().trim();
+  const range = sel.getRangeAt(0);
+  const raw = sel.toString().trim();
+  const { text, visual } = selectionText(range, raw);
   if (!text || text === lastSelText) return;
   lastSelText = text;
-  const t = tableFromSelection(sel.getRangeAt(0));
-  sendSnapshot('selection', text, t?.grid ?? null, t?.header ?? false);
+  const t = tableFromSelection(range);
+  sendSnapshot('selection', text, t?.grid ?? null, t?.header ?? false, { raw, visual });
 }
 
 document.addEventListener('selectionchange', () => {

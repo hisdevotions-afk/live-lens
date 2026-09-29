@@ -200,4 +200,9 @@ assert.deepEqual(splitQuestion('Questão 1\nSe x é real, qual é x?(1) 3x - 9 =
   { question: 'Se x é real, qual é x?', rest: 'Questão 1\n(1) 3x - 9 = 0 (2) x^2 = 9' });
 assert.equal(splitQuestion('veja x.com/?id=1 e 10'), null);
 assert.equal(splitQuestion('abrir ?ID=5&x=1 agora'), null);
+
+// TeX vindo de anotação do KaTeX / alt de imagem (Wikipedia): chaves e \displaystyle
+assert.equal(cleanMath('x^{2}'), 'x^2');
+assert.equal(cleanMath('{\\displaystyle x^{2}=9}'), 'x^2=9');
+assert.equal(cleanMath('3x_{1} - 9'), '3x_1 - 9');
 console.log('OK: todos os testes de stats.js passaram');

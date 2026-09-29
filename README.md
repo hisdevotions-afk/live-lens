@@ -56,7 +56,7 @@ sudo systemctl restart ollama
 
 - Depois de atualizar os arquivos, abra `chrome://extensions` e clique no ícone de **recarregar** (seta circular) no card do Live Lens; depois recarregue as abas abertas. Sem isso o Chrome continua rodando a versão antiga.
 - A **versão** aparece ao lado do nome, no topo do painel (ex.: `v0.3.0`). Se ela não bate com a do `manifest.json`, a extensão não foi recarregada.
-- Se algo não for reconhecido, abra as configurações (ícone de controles) → **Diagnóstico**: ele mostra o texto exato que a extensão recebeu e como o interpretou (modo, pergunta, dados). O botão **Copiar diagnóstico** ajuda a reportar o caso.
+- Se algo não for reconhecido, abra as configurações (ícone de controles) → **Diagnóstico**: ele mostra o texto exato que a extensão recebeu e como o interpretou (modo, pergunta, dados). O botão **Copiar diagnóstico** ajuda a reportar o caso. Quando a seleção tem fórmulas ou imagens, ele inclui também o campo `html` com um trecho do HTML real da seleção (sem o miolo dos SVG), que mostra como a página guarda a matemática.
 
 ## Limitações conhecidas
 

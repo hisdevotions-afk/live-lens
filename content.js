@@ -146,10 +146,21 @@ function describeVisual(frag) {
   };
 }
 
+// Trecho do HTML da seleção para o Diagnóstico: sem o miolo dos SVG, sem estilos e sem src (podem ser enormes).
+function htmlSnippet(frag) {
+  const box = document.createElement('div');
+  box.append(frag.cloneNode(true));
+  box.querySelectorAll('svg').forEach((s) => s.replaceChildren());
+  box.querySelectorAll('[style]').forEach((e) => e.removeAttribute('style'));
+  box.querySelectorAll('[src],[srcset]').forEach((e) => { e.removeAttribute('src'); e.removeAttribute('srcset'); });
+  return box.innerHTML.replace(/\s+/g, ' ').slice(0, 6000);
+}
+
 function selectionText(range, raw) {
   const frag = range.cloneContents();
   const visual = describeVisual(frag);
-  if (!(visual.mjx || visual.katex || visual.math || visual.tex || visual.mathImg)) return { text: raw, visual };
+  const html = Object.values(visual).some(Boolean) ? htmlSnippet(frag) : undefined;
+  if (!(visual.mjx || visual.katex || visual.math || visual.tex || visual.mathImg)) return { text: raw, visual, html };
   const parts = [];
   walk(frag, parts);
   const text = parts.join('')
@@ -159,7 +170,7 @@ function selectionText(range, raw) {
     .replace(/ *\n */g, '\n')
     .replace(/\n{2,}/g, '\n')
     .trim();
-  return { text, visual };
+  return { text, visual, html };
 }
 
 let lastSelText = '';
@@ -173,11 +184,11 @@ function onSelection() {
   if (!sel || sel.rangeCount === 0) return;
   const range = sel.getRangeAt(0);
   const raw = sel.toString().trim();
-  const { text, visual } = selectionText(range, raw);
+  const { text, visual, html } = selectionText(range, raw);
   if (!text || text === lastSelText) return;
   lastSelText = text;
   const t = tableFromSelection(range);
-  sendSnapshot('selection', text, t?.grid ?? null, t?.header ?? false, { raw, visual });
+  sendSnapshot('selection', text, t?.grid ?? null, t?.header ?? false, { raw, visual, html });
 }
 
 document.addEventListener('selectionchange', () => {

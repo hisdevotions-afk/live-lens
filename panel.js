@@ -180,6 +180,7 @@ function onSnapshot(snap) {
       dados: sq ? sq.rest : null,
       tabela: !!snap.table,
       visual: snap.visual,
+      html: snap.html, // estrutura real da página, para diagnosticar leituras estranhas
     });
     renderCalc();
     renderOrigin();

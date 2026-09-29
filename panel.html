@@ -108,6 +108,8 @@
   #calc .answer { display: block; margin-top: 6px; font-size: 1.5rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; }
   #calc .why { display: block; color: var(--muted); }
   #calc .dash { display: none; }
+  #hint { border: 1px solid var(--line-strong); border-radius: 10px; padding: 10px 12px; background: var(--surface); color: var(--muted); }
+  #hint b { display: block; color: var(--fg); margin-bottom: 2px; }
   #calc .val { display: block; font-size: 1.5rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; }
 
   #live { display: grid; gap: 4px; }
@@ -210,6 +212,8 @@
     <div id="origin"></div>
 
     <section id="calc" role="status" hidden></section>
+
+    <section id="hint" role="status" hidden></section>
 
     <section id="live" hidden>
       <div class="row"><span id="live-value"></span><span id="delta"></span><span class="tag">ao vivo</span></div>

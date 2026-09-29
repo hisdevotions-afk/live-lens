@@ -184,6 +184,26 @@ function selectionText(range, raw) {
   return { text, visual, html };
 }
 
+// Seleção de suficiência de dados ((1), (2)...) sem a pergunta: o enunciado costuma estar nos blocos logo acima.
+// Só lê o que está acima nesse formato; seleções comuns não leem nada além do selecionado.
+function blocksBefore(range) {
+  const sc = range.startContainer;
+  let el = sc.nodeType === Node.ELEMENT_NODE ? (sc.childNodes[range.startOffset] ?? sc) : sc;
+  if (el.nodeType !== Node.ELEMENT_NODE) el = el.parentElement;
+  for (let i = 0; el && !el.previousElementSibling && el.parentElement && i < 6; i++) el = el.parentElement;
+  const out = [];
+  let total = 0;
+  for (let prev = el?.previousElementSibling; prev && out.length < 4 && total < 1200; prev = prev.previousElementSibling) {
+    const r = document.createRange();
+    r.selectNodeContents(prev);
+    const t = selectionText(r, (prev.innerText ?? '').trim()).text.trim();
+    if (!t) continue;
+    out.push(t.slice(0, 600));
+    total += t.length;
+  }
+  return out;
+}
+
 let lastSelText = '';
 let selTimer;
 
@@ -199,7 +219,8 @@ function onSelection() {
   if (!text || text === lastSelText) return;
   lastSelText = text;
   const t = tableFromSelection(range);
-  sendSnapshot('selection', text, t?.grid ?? null, t?.header ?? false, { raw, visual, html });
+  const before = /\(\s*1\s*\)[\s\S]*\(\s*2\s*\)/.test(text) ? blocksBefore(range) : [];
+  sendSnapshot('selection', text, t?.grid ?? null, t?.header ?? false, { raw, visual, html, ...(before.length ? { before } : {}) });
 }
 
 document.addEventListener('selectionchange', () => {

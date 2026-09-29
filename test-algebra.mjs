@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { solve, resolve } from './algebra.js';
+import { solve, resolve, isDataSufficiencyShape } from './algebra.js';
 
 const v = (t) => { const r = solve(t); return r && r.kind === 'values' ? r.values.map((x) => Math.round(x * 1e6) / 1e6) : r && r.kind; };
 const txt = (t) => solve(t)?.text;
@@ -109,7 +109,7 @@ assert.equal(resolve('Um inteiro positivo p é primo?', '(1) p é par\n(2) p > 2
 assert.equal(resolve('Um inteiro positivo n é par?', '(1) n é divisível por 4\n(2) n = 7').letter, 'D');
 assert.match(resolve('Se x é um inteiro, qual é o valor de x?', '(1) x^2 = 9\n(2) x > 0').lines.join('|'), /x = 3/);
 // não entende tudo → null (o LLM assume, nunca uma resposta confiante errada)
-assert.equal(resolve(QN, '(1) n é um quadrado perfeito\n(2) n é par'), null);
+assert.equal(resolve(QN, '(1) n é um número triangular\n(2) n é par'), null);
 assert.equal(resolve(QN, '(1) n é divisível por 3 ou por 5\n(2) n é par'), null);
 assert.equal(resolve('Um número positivo n é divisível por 6?', '(1) n é divisível por 3\n(2) n é par'), null);  // "positivo" sem "inteiro": domínio real
 assert.equal(resolve('Um número natural n é par?', '(1) n é divisível por 4\n(2) n = 7'), null);                // "natural" é ambíguo (0?)
@@ -147,6 +147,21 @@ assert.equal(resolve('Se x e y são inteiros positivos, então x/y é um inteiro
 assert.equal(resolve('Se x e y são inteiros positivos, qual é o valor de x?', '(1) x + y = 3\n(2) x > y').letter, 'C');       // valor de x com duas variáveis
 assert.equal(resolve('Se x e y são inteiros positivos, então x+y é par?', '(1) x é par\n(2) z é par'), null);                 // variável fora do enunciado
 assert.equal(resolve('Se x, y e z são inteiros positivos, então x+y+z é par?', '(1) x é par\n(2) y é par'), null);            // 3 variáveis: não decido
-assert.equal(resolve('Se x e y são inteiros positivos, então x+y é par?', '(1) x é par\n(2) y é quadrado perfeito'), null);
+assert.equal(resolve('Se x e y são inteiros positivos, então x+y é par?', '(1) x é par\n(2) y é triangular'), null);
+
+
+// ---- novas propriedades: divisores, primos distintos, quadrado/cubo perfeito ----
+assert.equal(resolve('Um inteiro positivo n é um quadrado perfeito?', '(1) n possui exatamente 3 divisores positivos\n(2) n é par').letter, 'A'); // 3 divisores ⇒ p²
+assert.equal(resolve('Um inteiro positivo n é divisível por 12?', '(1) n possui exatamente 6 divisores positivos.\n(2) n é divisível por exatamente 2 números primos distintos.').letter, 'E');
+assert.equal(resolve('Um inteiro positivo n é ímpar?', '(1) n é um cubo perfeito\n(2) n é um quadrado perfeito').letter, 'E');
+assert.equal(resolve('Um inteiro positivo n é primo?', '(1) n tem exatamente 2 divisores positivos\n(2) n é par').letter, 'A');
+assert.equal(resolve('Um inteiro positivo n é um quadrado perfeito?', '(1) n possui exatamente 7 divisores\n(2) n é ímpar').letter, 'A');    // 7 divisores ⇒ p⁶ ⇒ quadrado perfeito
+// ---- forma de "suficiência de dados" (para saber quando procurar a pergunta acima da seleção) ----
+const OPT = 'A) A afirmação (1) sozinha é suficiente, mas (2) sozinha não é.\nB) A afirmação (2) sozinha é suficiente, mas (1) sozinha não é.\nC) As duas afirmações juntas são suficientes, mas nenhuma sozinha é suficiente.\nD) Cada afirmação sozinha é suficiente.\nE) Mesmo juntas, as afirmações não são suficientes.';
+assert.equal(isDataSufficiencyShape(`(1) n possui exatamente 6 divisores positivos.\n(2) n é divisível por exatamente 2 números primos distintos.\n${OPT}`), true);
+assert.equal(isDataSufficiencyShape('(1) 3x - 9 = 0\n(2) x^2 = 9\nAs duas juntas são suficientes'), true);
+assert.equal(isDataSufficiencyShape('(1) n é par\n(2) n é primo'), false);              // sem alternativas nem "suficiente": não arrisco
+assert.equal(isDataSufficiencyShape('Receita 1500 e custo 900'), false);
+assert.equal(isDataSufficiencyShape(OPT), false);                                        // alternativas sozinhas, sem afirmações
 
 console.log('OK: todos os testes de algebra.js passaram');

@@ -1,6 +1,6 @@
 import { summarize, delta, changedEnough, splitQuestion, calc, detectLocale, cleanMath, looksLikeMath } from './stats.js';
 import { analyze } from './llm.js';
-import { resolve } from './algebra.js';
+import { resolve, isDataSufficiencyShape } from './algebra.js';
 
 const LLM_WINDOW_MS = 15000; // pin: no máximo 1 análise do LLM a cada 15s
 const HISTORY_MAX = 50;      // pontos da sparkline
@@ -31,6 +31,8 @@ const state = {
   raw: '',            // texto bruto da resposta do LLM (renderizado por renderAnalysis)
   copyText: '',       // comando do erro atual, para o botão Copiar
   debug: null,        // o que a última seleção/pergunta foi (aba Diagnóstico das configurações)
+  hint: false,        // seleção de suficiência de dados sem enunciado em lugar nenhum
+  contextUsed: false, // o enunciado veio do bloco acima da seleção, não da seleção
   model: DEFAULT_MODEL,
 };
 
@@ -118,6 +120,8 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       resetLive();
       state.current = null; // pin novo retoma a tela (uma seleção deixa de ter prioridade)
       state.answer = null;
+      state.hint = false;
+      renderHint();
       renderCalc();
     }
     if (!msg.pinned) {
@@ -142,7 +146,7 @@ function newAnswer(question, data, lang = '') {
     question,
     calc: calc(question, state.pinLocale ?? detectLocale(question, lang)),
     data,
-    dataSummary: data ? (looksLikeMath(data.text) ? { locale: 'pt', groups: [], primary: null } : summarize(data)) : null,
+    dataSummary: data ? (looksLikeMath(data.text) || isDataSufficiencyShape(data.text) ? { locale: 'pt', groups: [], primary: null } : summarize(data)) : null,
     resolution: resolve(question, data ? data.text : ''), // equações e suficiência de dados resolvidas em código
   };
 }
@@ -152,6 +156,8 @@ function newTypedAnswer(question) {
   const cur = state.current;
   const data = state.answer ? state.answer.data : cur?.source === 'selection' ? cur : null;
   state.answer = newAnswer(question, data, cur?.lang);
+  state.hint = false;
+  renderHint();
   setDebug({ modo: 'pergunta digitada', pergunta: question, dados: data ? data.text : cur?.source === 'pin' ? '(elemento fixado)' : null, resolucao: state.answer.resolution?.lines });
   state.summary = data ? (state.answer.dataSummary) : state.pinSummary;
   renderCalc();
@@ -163,15 +169,29 @@ function onSnapshot(snap) {
   if (snap.source === 'selection') {
     const textoOriginal = snap.text;
     snap = { ...snap, text: cleanMath(snap.text) }; // LaTeX colado como texto vira símbolos legíveis
+    let sq = splitQuestion(snap.text);
+    let contexto = null;
+    // Afirmações (1), (2) e alternativas sem a pergunta: o enunciado costuma estar no bloco logo acima.
+    if (!sq && isDataSufficiencyShape(snap.text)) {
+      for (const b of snap.before ?? []) {
+        const bt = cleanMath(b);
+        if (!splitQuestion(bt)) continue;
+        contexto = bt;
+        snap = { ...snap, text: `${bt}\n${snap.text}` };
+        sq = splitQuestion(snap.text);
+        break;
+      }
+    }
+    state.hint = !sq && isDataSufficiencyShape(snap.text);
+    state.contextUsed = !!contexto;
     state.current = snap;
-    const sq = splitQuestion(snap.text);
     if (sq) {
       // Pergunta (com ou sem dados na mesma seleção): o cálculo sai na hora, em código.
       state.answer = newAnswer(sq.question, sq.rest ? { ...snap, text: sq.rest } : null, snap.lang);
       state.summary = state.answer.dataSummary ?? state.pinSummary;
     } else {
       state.answer = null;
-      state.summary = summarize(snap);
+      state.summary = state.hint ? null : summarize(snap); // sem pergunta, estatística de "(1) ... (2) ..." é lixo
     }
     setDebug({
       modo: sq ? 'pergunta' : 'análise',
@@ -184,11 +204,18 @@ function onSnapshot(snap) {
       visual: snap.visual,
       html: snap.html, // estrutura real da página, para diagnosticar leituras estranhas
       resolucao: state.answer?.resolution?.lines,
+      contexto: contexto ?? undefined, // bloco acima da seleção usado como enunciado
+      semEnunciado: state.hint || undefined,
     });
     renderCalc();
+    renderHint();
     renderOrigin();
     renderStats();
-    if (!state.paused) runLlm('', 'user');
+    if (state.hint) {
+      $('asked').hidden = true;
+      setAnalysis('');
+      setLlmStatus('aguardando o enunciado');
+    } else if (!state.paused) runLlm('', 'user');
     return;
   }
   // Pin: sempre alimenta histórico e variação...
@@ -452,7 +479,7 @@ function renderOrigin() {
   const s = state.current;
   const a = state.answer;
   if (a) {
-    const sobre = a.data ? 'sobre a seleção' : state.pinSnap ? 'sobre o elemento fixado' : 'pergunta geral';
+    const sobre = state.contextUsed ? 'enunciado lido logo acima da seleção' : a.data ? 'sobre a seleção' : state.pinSnap ? 'sobre o elemento fixado' : 'pergunta geral';
     setOrigin('Pergunta', `${sobre} · ${time(s?.ts ?? Date.now())}`);
     return;
   }
@@ -460,6 +487,17 @@ function renderOrigin() {
 }
 
 const METRICS = [['sum', 'soma'], ['mean', 'média'], ['median', 'mediana'], ['min', 'mín'], ['max', 'máx'], ['stdev', 'desvio']];
+
+function renderHint() {
+  const box = $('hint');
+  box.hidden = !state.hint;
+  box.replaceChildren();
+  if (state.hint) {
+    const b = document.createElement('b');
+    b.textContent = 'Falta o enunciado.';
+    box.append(b, 'Isto parece um problema de suficiência de dados, mas a seleção não inclui a pergunta (e não achei uma no texto logo acima). Selecione também a linha da pergunta, acima de "(1)".');
+  }
+}
 
 function renderCalc() {
   const res = state.answer?.resolution;

@@ -267,6 +267,15 @@ function extractStatements(rest) {
   }));
 }
 
+// O texto tem cara de problema de suficiência de dados ((1), (2) e alternativas)? Serve para procurar a pergunta acima.
+export function isDataSufficiencyShape(text) {
+  const t = String(text);
+  const body = `\n${t}`.split(/\n\s*(?:(?:alternativas|op[çc][õo]es)\b[^\n]*|[A-E][.)]\s)/i)[0];
+  if ([...body.matchAll(/(?<![\w)])\(\s*[1-9]\s*\)/g)].length < 2) return false;
+  const options = [...t.matchAll(/^\s*([A-E])[.)]\s*(.+)$/gm)].filter((m) => optionKind(m[2])).length;
+  return options >= 3 || /suficien/i.test(t);
+}
+
 // Convenção padrão do GMAT: qual letra segue de "a afirmação basta sozinha?".
 const dsKind = (s1, s2, together) => (s1 && s2 ? 'D' : s1 ? 'A' : s2 ? 'B' : together ? 'C' : 'E');
 
@@ -294,6 +303,10 @@ function resolveStatements(question, stmts, rest) {
 const N1 = 5000; // uma variável: de 1 a 5000
 const N2 = 100;  // duas variáveis: de 1 a 100 cada
 const isInt = Number.isInteger;
+const VERB = '(?:é|for|seja|possui|tem|têm)';
+const IS_PRED = new RegExp(`\\s${VERB}\\s`);
+const numDivisors = (n) => { if (!isInt(n) || n < 1) return NaN; let c = 0; for (let d = 1; d * d <= n; d++) if (n % d === 0) c += d * d === n ? 1 : 2; return c; };
+const primeFactors = (n) => { if (!isInt(n) || n < 2) return 0; let c = 0; for (let d = 2; d * d <= n; d++) if (n % d === 0) { c++; while (n % d === 0) n /= d; } return c + (n > 1 ? 1 : 0); };
 const isPrime = (n) => { if (!isInt(n) || n < 2) return false; for (let d = 2; d * d <= n; d++) if (n % d === 0) return false; return true; };
 const REL = { '>': (a, b) => a > b, '<': (a, b) => a < b, '>=': (a, b) => a >= b, '≥': (a, b) => a >= b, '<=': (a, b) => a <= b, '≤': (a, b) => a <= b,
   '=': (a, b) => Math.abs(a - b) <= 1e-9 * (Math.abs(a) + Math.abs(b)) + 1e-12, '!=': (a, b) => a !== b, '≠': (a, b) => a !== b };
@@ -306,9 +319,13 @@ function parsePredicate(raw) {
     const ps = parts.map(parsePredicate);
     return ps.every(Boolean) ? (n) => ps.every((p) => p(n)) : null;
   }
-  const s = s0.replace(/^(?:é|for|seja|era)\s+/, '').replace(/^(?:um|uma)\s+/, '').replace(/^número\s+/, '');
+  const s = s0.replace(new RegExp(`^(?:${VERB.slice(3, -1)}|era)\\s+`), '').replace(/^(?:um|uma)\s+/, '').replace(/^número\s+/, '');
   let m;
   if ((m = s.match(/^(?:divisível\s+por|múltiplo\s+de)\s+(\d+)$/))) { const k = Number(m[1]); return k > 0 ? (n) => isInt(n) && n % k === 0 : null; }
+  if ((m = s.match(/^(?:exatamente\s+)?(\d+)\s+divisores(?:\s+positivos)?$/))) { const k = Number(m[1]); return (n) => numDivisors(n) === k; }
+  if ((m = s.match(/^(?:divisível\s+por\s+)?exatamente\s+(\d+)\s+(?:números\s+|fatores\s+)?primos(?:\s+distintos)?$/)) || (m = s.match(/^(\d+)\s+(?:números\s+|fatores\s+)?primos\s+distintos$/))) { const k = Number(m[1]); return (n) => primeFactors(n) === k; }
+  if (s === 'quadrado perfeito') return (n) => isInt(n) && n >= 0 && isInt(Math.sqrt(n));
+  if (s === 'cubo perfeito') return (n) => isInt(n) && Math.round(Math.cbrt(n)) ** 3 === n;
   if (s === 'par') return (n) => isInt(n) && n % 2 === 0;
   if (s === 'ímpar') return (n) => isInt(n) && n % 2 !== 0;
   if (s === 'primo') return isPrime;
@@ -345,7 +362,7 @@ function compileExpr(text, allowed) {
 function parseStatement(text, allowed) {
   const t = text.trim().replace(/[.;]+$/, '');
   const rel = t.match(/^(.+?)(>=|≥|<=|≤|!=|≠|=|>|<)(.+)$/);
-  const isPred = /\s(?:é|for|seja)\s/.test(t);
+  const isPred = IS_PRED.test(t);
   if (rel && !isPred) {
     const l = compileExpr(rel[1], allowed);
     const r = compileExpr(rel[3], allowed);
@@ -353,7 +370,7 @@ function parseStatement(text, allowed) {
     const cmp = REL[rel[2]];
     return { fn: (env) => { const a = l.fn(env); const b = r.fn(env); return Number.isFinite(a) && Number.isFinite(b) && cmp(a, b); }, text: `${rel[1].trim()} ${rel[2]} ${rel[3].trim()}` };
   }
-  const m = t.match(/^(.+?)\s+(?:é|for|seja)\s+(.+)$/);
+  const m = t.match(new RegExp(`^(.+?)\\s+${VERB}\\s+(.+)$`));
   if (!m) return null;
   const subj = compileExpr(m[1], allowed);
   const pred = parsePredicate(m[2]);
@@ -365,8 +382,8 @@ function parseStatement(text, allowed) {
 function parseAsk(clause, allowed) {
   const t = clause.trim();
   const rel = parseStatement(t, allowed);
-  if (rel && !/\s(?:é|for|seja)\s/.test(t)) return rel;
-  for (const m of [...t.matchAll(/\s+é\s+/g)].reverse()) {
+  if (rel && !IS_PRED.test(t)) return rel;
+  for (const m of [...t.matchAll(new RegExp(`\\s+${VERB}\\s+`, 'g'))].reverse()) {
     const pred = parsePredicate(t.slice(m.index + m[0].length));
     if (!pred) continue;
     const words = t.slice(0, m.index).split(/\s+/);

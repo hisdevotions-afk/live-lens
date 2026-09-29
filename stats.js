@@ -223,6 +223,7 @@ export function calc(text, locale = 'pt') {
 }
 
 const ENDS_Q = /\?["'”)\]]*$/;
+const hasWords = (s) => (s.match(/\p{L}/gu) || []).length >= 4; // "?" sozinho (resto de leitura ruim) não é pergunta
 // "?" que fecha uma pergunta, com ou sem espaço depois ("x?(1)", "x?A)"); "?id=1" (URL) não conta.
 const Q_MARK = /^([\s\S]*?\?["'”)\]]*)(?![\w.%-]+=)([\s\S]*)$/;
 
@@ -263,7 +264,7 @@ function splitInLine(line) {
     const m = pieces[k].match(Q_MARK);
     if (!m) continue;
     const question = m[1].trim();
-    if (question.length < 2 || question.length > 300) continue;
+    if (!hasWords(question) || question.length > 300) continue;
     const rest = [...pieces.slice(0, k), m[2].trim(), ...pieces.slice(k + 1)].filter(Boolean).join(' ').trim();
     return { question, rest };
   }
@@ -279,7 +280,7 @@ export function splitQuestion(text) {
   // Pergunta numa linha própria (a última, ou a primeira, com os dados nas outras).
   for (let i = lines.length - 1; i >= 0; i--) {
     const ln = lines[i].trim();
-    if (ln.length <= 300 && ENDS_Q.test(ln)) {
+    if (ln.length <= 300 && ENDS_Q.test(ln) && hasWords(ln)) {
       return { question: ln, rest: lines.filter((_, j) => j !== i).join('\n').trim() };
     }
   }

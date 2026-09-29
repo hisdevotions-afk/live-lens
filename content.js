@@ -112,11 +112,19 @@ function mml(el) {
 }
 
 function mathText(n) {
-  const tex = n.querySelector?.('annotation[encoding="application/x-tex"]'); // KaTeX: TeX limpo
+  const tex = n.querySelector?.('annotation[encoding="application/x-tex"], annotation[encoding="text/plain"]'); // KaTeX: TeX; Google: texto puro
   if (tex) return tex.textContent.trim();
   const m = n.localName === 'math' ? n : n.querySelector?.('math'); // MathJax: MathML assistivo
   if (m) return mml(m).trim();
   return (n.getAttribute?.('aria-label') || n.textContent || '').trim();
+}
+
+// Renderizador de fórmulas do Google (data-xpm-*): o TeX está no atributo; o SVG só tem glifos (𝑥).
+function xpmText(n) {
+  return n.getAttribute('data-xpm-latex')
+    || n.querySelector('annotation[encoding="text/plain"]')?.textContent
+    || n.querySelector('[data-xpm-latex]')?.getAttribute('data-xpm-latex')
+    || mathText(n);
 }
 
 function walk(n, out) {
@@ -125,7 +133,9 @@ function walk(n, out) {
   const tag = n.localName;
   if (tag === 'script') { if (/^math\/tex/.test(n.type)) out.push(' ', n.textContent.trim(), ' '); return; } // MathJax v2
   if (tag === 'style' || tag === 'noscript') return;
+  if (n.hasAttribute?.('data-xpm-copy-root')) { out.push(' ', xpmText(n).trim(), ' '); return; }
   if (tag === 'mjx-container' || tag === 'math' || n.classList?.contains('katex')) { out.push(' ', mathText(n), ' '); return; }
+  if (tag === 'svg') { const t = n.getAttribute('aria-label') || n.querySelector(':scope > title')?.textContent; if (t) out.push(' ', t, ' '); return; } // o texto dentro de SVG é só glifo
   if (n.classList?.contains('MathJax') || n.classList?.contains('MathJax_Preview')) return; // v2: vale o <script> ao lado
   if (tag === 'img') { const alt = n.getAttribute('alt') || ''; if (MATHY_ALT.test(alt)) out.push(' ', alt, ' '); return; }
   if (tag === 'br') { out.push('\n'); return; }
@@ -141,7 +151,7 @@ function describeVisual(frag) {
   const count = (sel) => frag.querySelectorAll(sel).length;
   const mathImg = [...frag.querySelectorAll('img[alt]')].filter((i) => MATHY_ALT.test(i.getAttribute('alt'))).length;
   return {
-    mjx: count('mjx-container'), katex: count('.katex'), math: count('math'), tex: count('script[type^="math/tex"]'),
+    mjx: count('mjx-container'), katex: count('.katex'), xpm: count('[data-xpm-copy-root]'), math: count('math'), tex: count('script[type^="math/tex"]'),
     mathImg, img: count('img'), svg: count('svg'), canvas: count('canvas'),
   };
 }
@@ -160,7 +170,7 @@ function selectionText(range, raw) {
   const frag = range.cloneContents();
   const visual = describeVisual(frag);
   const html = Object.values(visual).some(Boolean) ? htmlSnippet(frag) : undefined;
-  if (!(visual.mjx || visual.katex || visual.math || visual.tex || visual.mathImg)) return { text: raw, visual, html };
+  if (!(visual.mjx || visual.katex || visual.xpm || visual.math || visual.tex || visual.mathImg)) return { text: raw, visual, html };
   const parts = [];
   walk(frag, parts);
   const text = parts.join('')
@@ -169,6 +179,7 @@ function selectionText(range, raw) {
     .replace(/\( +/g, '(').replace(/ +\)/g, ')')
     .replace(/ *\n */g, '\n')
     .replace(/\n{2,}/g, '\n')
+    .replace(/[\u{1D400}-\u{1D7FF}]/gu, (c) => c.normalize('NFKC')) // 𝑥 → x, 𝟐 → 2 (só as letras matemáticas; ² fica)
     .trim();
   return { text, visual, html };
 }

@@ -205,4 +205,9 @@ assert.equal(splitQuestion('abrir ?ID=5&x=1 agora'), null);
 assert.equal(cleanMath('x^{2}'), 'x^2');
 assert.equal(cleanMath('{\\displaystyle x^{2}=9}'), 'x^2=9');
 assert.equal(cleanMath('3x_{1} - 9'), '3x_1 - 9');
+
+// uma linha só com "?" (resto de leitura ruim) não é uma pergunta
+assert.equal(splitQuestion('1.\nSe\nx\né um número real, qual é o valor de\nx\n?\n(1)\n3x\n=0'), null);
+assert.equal(splitQuestion('a\n?\nb'), null);
+assert.deepEqual(splitQuestion('1.\nSe x é real, qual é x?\n(1) 3x - 9 = 0'), { question: 'Se x é real, qual é x?', rest: '1.\n(1) 3x - 9 = 0' });
 console.log('OK: todos os testes de stats.js passaram');

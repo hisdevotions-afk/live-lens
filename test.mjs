@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   detectLocale, parseNumber, extractNumbers, describe,
-  tableColumns, summarize, delta, changedEnough, isQuestion, calc,
+  tableColumns, summarize, delta, changedEnough, isQuestion, calc, splitQuestion,
 } from './stats.js';
 
 // detectLocale
@@ -146,5 +146,22 @@ assert.equal(calc('Quanto é 15% de 200 + 10?'), null);   // conta composta com 
 assert.equal(calc('15% de 200 e mais 10?').value, 30);
 for (const q of ['Qual a receita?', 'quanto é 10/0?', 'receita em 29/09/2026?', 'em 12/2025?', 'vendas de 98765-4321?',
   'máximo de 5?', '2 xícaras de 3?', '2 + ', '(2 + 3', '']) assert.equal(calc(q), null, q);
+
+
+// splitQuestion: pergunta sozinha, ou pergunta + dados na mesma seleção
+assert.deepEqual(splitQuestion('Qual a receita?'), { question: 'Qual a receita?', rest: '' });
+assert.deepEqual(splitQuestion('Qual produto vende mais'), { question: 'Qual produto vende mais', rest: '' });
+assert.deepEqual(splitQuestion('Produto\tQtd\nA\t10\nB\t20\nQual produto vende mais?'),
+  { question: 'Qual produto vende mais?', rest: 'Produto\tQtd\nA\t10\nB\t20' });
+assert.deepEqual(splitQuestion('Qual produto vende mais?\nA 10\nB 20'), { question: 'Qual produto vende mais?', rest: 'A 10\nB 20' });
+assert.deepEqual(splitQuestion('Receita em março: R$ 1.500,00. Em abril: R$ 980,00. Qual mês vendeu mais?'),
+  { question: 'Qual mês vendeu mais?', rest: 'Receita em março: R$ 1.500,00. Em abril: R$ 980,00.' });
+assert.deepEqual(splitQuestion('  Ana\t10\n\nQuanto é o total?  \n'), { question: 'Quanto é o total?', rest: 'Ana\t10' });
+assert.equal(splitQuestion('Receita total R$ 1.234,56'), null);
+assert.equal(splitQuestion('Como resultado, a receita subiu 10%.'), null);
+assert.equal(splitQuestion('linha 1\nlinha 2\nlinha 3'), null);
+assert.equal(splitQuestion(''), null);
+assert.equal(splitQuestion('dados\n' + 'q'.repeat(400) + '?'), null);              // "pergunta" longa demais não conta
+assert.equal(splitQuestion('x'.repeat(5000) + '\nQual o maior?').rest.length, 5000);  // dados grandes ficam inteiros
 
 console.log('OK: todos os testes de stats.js passaram');

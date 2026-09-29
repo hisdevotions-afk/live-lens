@@ -1,4 +1,4 @@
-import { summarize, delta, changedEnough, isQuestion, calc, detectLocale } from './stats.js';
+import { summarize, delta, changedEnough, splitQuestion, calc, detectLocale } from './stats.js';
 import { analyze } from './llm.js';
 
 const LLM_WINDOW_MS = 15000; // pin: no máximo 1 análise do LLM a cada 15s
@@ -15,7 +15,7 @@ const state = {
   history: [],        // valores primary do elemento fixado
   pinSnap: null,      // último snapshot do elemento fixado (dados para responder perguntas)
   pinSummary: null,
-  answer: null,       // modo pergunta: { question, calc } enquanto a seleção na tela for uma pergunta
+  answer: null,       // modo pergunta: { question, calc, data, dataSummary } (data = seleção que veio junto, ou null)
   pinLocale: null,    // locale do 1º snapshot do pin (não muda enquanto o pin durar)
   liveDelta: null,    // delta(anterior, atual) do elemento fixado
   lastLlmAt: 0,       // início da última análise (só para exibir)
@@ -61,7 +61,7 @@ function resetLive() {
   state.pinLocale = null;
   state.liveDelta = null;
   if (state.answer) {
-    state.summary = null; // a pergunta perdeu os dados do elemento fixado
+    state.summary = state.answer.dataSummary; // sem dados próprios, perdeu os do elemento fixado
     renderStats();
   }
   renderLive();
@@ -123,14 +123,35 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
 // ---------- Snapshot → stats → LLM ----------
 
+// dados: snapshot que veio junto com a pergunta (ou null: usa o elemento fixado, se houver, ou nada).
+function newAnswer(question, data, lang = '') {
+  return {
+    question,
+    calc: calc(question, state.pinLocale ?? detectLocale(question, lang)),
+    data,
+    dataSummary: data ? summarize(data) : null,
+  };
+}
+
+// Pergunta digitada: usa como dados a seleção atual (ou os dados da pergunta anterior); senão, o elemento fixado; senão, nada.
+function newTypedAnswer(question) {
+  const cur = state.current;
+  const data = state.answer ? state.answer.data : cur?.source === 'selection' ? cur : null;
+  state.answer = newAnswer(question, data, cur?.lang);
+  state.summary = data ? (state.answer.dataSummary) : state.pinSummary;
+  renderCalc();
+  renderOrigin();
+  renderStats();
+}
+
 function onSnapshot(snap) {
   if (snap.source === 'selection') {
     state.current = snap;
-    const q = isQuestion(snap.text) ? snap.text.trim() : null;
-    if (q) {
-      // Pergunta: o cálculo sai na hora (código); o LLM responde sobre o elemento fixado, se houver.
-      state.answer = { question: q, calc: calc(q, state.pinLocale ?? detectLocale(q, snap.lang)) };
-      state.summary = state.pinSummary;
+    const sq = splitQuestion(snap.text);
+    if (sq) {
+      // Pergunta (com ou sem dados na mesma seleção): o cálculo sai na hora, em código.
+      state.answer = newAnswer(sq.question, sq.rest ? { ...snap, text: sq.rest } : null, snap.lang);
+      state.summary = state.answer.dataSummary ?? state.pinSummary;
     } else {
       state.answer = null;
       state.summary = summarize(snap);
@@ -154,8 +175,11 @@ function onSnapshot(snap) {
   state.pinSnap = snap;
   state.pinSummary = summary;
   if (state.answer) {
-    state.summary = summary;
-    renderStats();
+    if (!state.answer.dataSummary) {
+      state.summary = summary;
+      renderStats();
+    }
+    return; // uma pergunta na tela não é re-respondida sozinha
   }
   // ...mas não tira da tela uma seleção que o usuário está lendo.
   if (state.current?.source === 'selection') return;
@@ -197,12 +221,13 @@ function maybeRunLlmForPin() {
 async function runLlm(question = '', kind = 'user') {
   clearTimeout(state.pendingTimer);
   state.controller?.abort();
+  if (question) newTypedAnswer(question); // pergunta digitada no painel
   const snap = state.current;
-  if (!snap) {
-    setLlmStatus('Selecione algo na página primeiro.');
+  const answer = state.answer;
+  if (!snap && !answer) {
+    setLlmStatus('Selecione algo na página ou digite uma pergunta.');
     return;
   }
-  const answer = state.answer;
   const controller = new AbortController();
   state.controller = controller;
   state.runKind = kind;
@@ -216,7 +241,7 @@ async function runLlm(question = '', kind = 'user') {
   setLlmStatus('analisando…');
   try {
     const chunks = answer
-      ? analyze({ model: state.model, snapshot: state.pinSnap, summary: state.pinSummary, question: question || answer.question, answer: true, calc: question ? null : answer.calc, signal: controller.signal })
+      ? analyze({ model: state.model, snapshot: answer.data ?? state.pinSnap, summary: answer.dataSummary ?? state.pinSummary, question: answer.question, answer: true, calc: answer.calc, signal: controller.signal })
       : analyze({ model: state.model, snapshot: snap, summary: state.summary, question, signal: controller.signal });
     for await (const chunk of chunks) $('analysis').textContent += chunk;
     setLlmStatus(`${answer ? 'resposta' : 'análise'} de ${time(state.lastLlmAt)}`);
@@ -261,7 +286,13 @@ $('question').addEventListener('keydown', (e) => {
 
 function renderOrigin() {
   const s = state.current;
-  const origem = state.answer ? 'Pergunta' : s.source === 'pin' ? 'Elemento fixado' : 'Seleção';
+  const a = state.answer;
+  if (a) {
+    const sobre = a.data ? 'sobre a seleção' : state.pinSnap ? 'sobre o elemento fixado' : 'pergunta geral';
+    $('origin').textContent = `Pergunta · ${sobre} · ${time(s?.ts ?? Date.now())}`;
+    return;
+  }
+  const origem = s.source === 'pin' ? 'Elemento fixado' : 'Seleção';
   $('origin').textContent = `${origem} · ${time(s.ts)} · ${s.title}`;
 }
 

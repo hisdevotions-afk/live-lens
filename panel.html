@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Live Lens</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fg: #1f2328; --muted: #656d76; --bg: #ffffff; --line: #d0d7de;
+    --up: #1a7f37; --down: #cf222e; --accent: #f59e0b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e6edf3; --muted: #8d96a0; --bg: #0d1117; --line: #30363d; --up: #3fb950; --down: #f85149; }
+  }
+  body { margin: 0; padding: 12px; font: 13px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  section { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  #pin-status { flex-basis: 100%; }
+  #pin-status, #origin, #llm-status { color: var(--muted); }
+  button, input { font: inherit; padding: 3px 8px; }
+  button { cursor: pointer; }
+  #model { width: 110px; }
+  h3 { margin: 8px 0 2px; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  td { padding: 1px 4px; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; }
+  #live-value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .up { color: var(--up); }
+  .down { color: var(--down); }
+  #spark-svg { width: 100%; height: 40px; display: block; margin-top: 4px; }
+  #spark { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  #analysis { white-space: pre-wrap; margin: 6px 0; }
+  #question { width: 100%; box-sizing: border-box; }
+</style>
+</head>
+<body>
+  <section class="bar">
+    <span id="pin-status">Nada fixado</span>
+    <button id="pick">Fixar elemento</button>
+    <button id="unpin" disabled>Soltar</button>
+    <button id="pause">Pausar LLM</button>
+    <label>Modelo <input id="model"></label>
+  </section>
+
+  <section><div id="origin">Selecione algo na página ou fixe um elemento.</div></section>
+
+  <section id="stats"></section>
+
+  <section id="live" hidden>
+    <div><span id="live-value"></span> <span id="delta"></span></div>
+    <svg id="spark-svg" viewBox="0 0 280 40" preserveAspectRatio="none">
+      <polyline id="spark" vector-effect="non-scaling-stroke"></polyline>
+    </svg>
+  </section>
+
+  <section>
+    <div class="bar"><span id="llm-status">aguardando dados</span> <button id="rerun">Reanalisar</button></div>
+    <div id="analysis"></div>
+    <input id="question" placeholder="Pergunte algo sobre os dados (Enter)">
+  </section>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

@@ -27,6 +27,8 @@ const state = {
   runKind: null,      // 'pin' (automática) | 'user' (seleção, pergunta, reanalisar)
   pendingTimer: null, // reavaliação quando a janela de 15s abrir
   paused: false,
+  raw: '',            // texto bruto da resposta do LLM (renderizado por renderAnalysis)
+  copyText: '',       // comando do erro atual, para o botão Copiar
   model: DEFAULT_MODEL,
 };
 
@@ -70,6 +72,8 @@ function resetLive() {
 function renderPin(pinned, label) {
   $('pin-status').textContent = pinned ? `Fixado: ${label}` : 'Nada fixado';
   $('unpin').disabled = !pinned;
+  document.body.dataset.pinned = String(!!pinned);
+  $('pick-label').textContent = pinned ? 'Trocar' : 'Fixar elemento';
 }
 
 async function refreshPinState() {
@@ -237,13 +241,15 @@ async function runLlm(question = '', kind = 'user') {
     state.lastLlmPrimary = state.summary.primary;
     state.lastLlmText = snap.text;
   }
-  $('analysis').textContent = '';
+  $('asked').hidden = !answer;
+  $('asked').textContent = answer?.question ?? '';
+  setAnalysis('');
   setLlmStatus('analisando…');
   try {
     const chunks = answer
       ? analyze({ model: state.model, snapshot: answer.data ?? state.pinSnap, summary: answer.dataSummary ?? state.pinSummary, question: answer.question, answer: true, calc: answer.calc, signal: controller.signal })
       : analyze({ model: state.model, snapshot: snap, summary: state.summary, question, signal: controller.signal });
-    for await (const chunk of chunks) $('analysis').textContent += chunk;
+    for await (const chunk of chunks) appendAnalysis(chunk);
     setLlmStatus(`${answer ? 'resposta' : 'análise'} de ${time(state.lastLlmAt)}`);
   } catch (e) {
     if (e.name === 'AbortError') return; // cancelamento é normal
@@ -264,70 +270,188 @@ function errorText(code) {
   return `Erro do Ollama: ${code}`;
 }
 
+// Estado visual do resultado a partir do texto (o texto em si é o contrato com os testes e o usuário).
 function setLlmStatus(text) {
-  $('llm-status').textContent = text;
+  const el = $('llm-status');
+  const kind = /…$/.test(text) ? 'busy' : /^(análise|resposta) de /.test(text) ? 'done' : /^(Ollama|Modelo|Erro)/.test(text) ? 'error' : 'idle';
+  const cmd = kind === 'error' ? text.match(/^(.*?Rode: )(.+)$/) : null; // comando vira <code> copiável
+  el.replaceChildren();
+  if (cmd) {
+    const code = document.createElement('code');
+    code.textContent = cmd[2];
+    el.append(cmd[1], code);
+  } else {
+    el.textContent = text;
+  }
+  state.copyText = cmd ? cmd[2] : '';
+  $('copy').hidden = !cmd;
+  $('result').dataset.state = kind;
+  $('analysis').setAttribute('aria-busy', String(kind === 'busy'));
+}
+
+// Resposta do LLM: bullets e **negrito** viram elementos; todo texto entra por textContent.
+function inline(el, text) {
+  for (const part of text.split(/(\*\*[^*]+\*\*)/)) {
+    if (/^\*\*[^*]+\*\*$/.test(part)) {
+      const b = document.createElement('strong');
+      b.textContent = part.slice(2, -2);
+      el.append(b);
+    } else if (part) {
+      el.append(part);
+    }
+  }
+}
+
+function renderAnalysis() {
+  const box = $('analysis');
+  box.replaceChildren();
+  let list = null;
+  for (const line of state.raw.split('\n')) {
+    const t = line.trim();
+    if (!t) { list = null; continue; }
+    const m = t.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/);
+    if (m) {
+      if (!list) { list = document.createElement('ul'); box.append(list); }
+      const li = document.createElement('li');
+      inline(li, m[1]);
+      list.append(li);
+    } else {
+      list = null;
+      const p = document.createElement('p');
+      inline(p, t);
+      box.append(p);
+    }
+  }
+}
+
+function setAnalysis(text) {
+  state.raw = text;
+  renderAnalysis();
+}
+
+function appendAnalysis(chunk) {
+  state.raw += chunk;
+  renderAnalysis();
 }
 
 $('pause').addEventListener('click', () => {
   state.paused = !state.paused;
-  $('pause').textContent = state.paused ? 'Retomar LLM' : 'Pausar LLM';
+  $('pause-label').textContent = state.paused ? 'Retomar LLM' : 'Pausar LLM';
+  $('pause').setAttribute('aria-pressed', String(state.paused));
   if (state.paused) {
     clearTimeout(state.pendingTimer);
     state.controller?.abort();
     setLlmStatus('pausado');
   }
 });
-$('rerun').addEventListener('click', () => runLlm($('question').value.trim()));
+$('rerun').addEventListener('click', () => runLlm());
+
+function sendQuestion() {
+  const q = $('question').value.trim();
+  if (!q) return;
+  $('question').value = '';
+  runLlm(q);
+}
+$('ask').addEventListener('click', sendQuestion);
 $('question').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') runLlm($('question').value.trim());
+  if (e.key === 'Enter' && !e.isComposing) sendQuestion();
+});
+
+$('gear').addEventListener('click', () => {
+  const open = $('settings').hidden;
+  $('settings').hidden = !open;
+  $('gear').setAttribute('aria-expanded', String(open));
+  if (open) $('model').focus();
+});
+
+$('copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(state.copyText);
+    $('copy').title = 'Copiado!';
+    setTimeout(() => ($('copy').title = 'Copiar comando'), 1500);
+  } catch {
+    // sem permissão de área de transferência: o comando continua visível para copiar à mão
+  }
 });
 
 // ---------- Render (sempre textContent, nunca innerHTML) ----------
+
+function syncView() {
+  const main = document.querySelector('main');
+  main.dataset.empty = String(!(state.current || state.answer || state.history.length));
+  main.dataset.mode = state.answer ? 'answer' : 'analysis';
+}
+
+function setOrigin(kind, meta) {
+  const kindEl = document.createElement('span');
+  kindEl.className = 'kind';
+  kindEl.textContent = kind;
+  const metaEl = document.createElement('span');
+  metaEl.className = 'meta';
+  metaEl.textContent = meta;
+  $('origin').replaceChildren(kindEl, metaEl);
+  syncView();
+}
 
 function renderOrigin() {
   const s = state.current;
   const a = state.answer;
   if (a) {
     const sobre = a.data ? 'sobre a seleção' : state.pinSnap ? 'sobre o elemento fixado' : 'pergunta geral';
-    $('origin').textContent = `Pergunta · ${sobre} · ${time(s?.ts ?? Date.now())}`;
+    setOrigin('Pergunta', `${sobre} · ${time(s?.ts ?? Date.now())}`);
     return;
   }
-  const origem = s.source === 'pin' ? 'Elemento fixado' : 'Seleção';
-  $('origin').textContent = `${origem} · ${time(s.ts)} · ${s.title}`;
+  setOrigin(s.source === 'pin' ? 'Elemento fixado' : 'Seleção', `${time(s.ts)} · ${s.title}`);
 }
 
-const LABELS = [
-  ['n', 'n'], ['sum', 'soma'], ['mean', 'média'], ['median', 'mediana'],
-  ['min', 'min'], ['max', 'max'], ['stdev', 'desvio'],
-];
-
-function addRow(table, label, value) {
-  const tr = table.insertRow();
-  tr.insertCell().textContent = label;
-  tr.insertCell().textContent = value;
-}
+const METRICS = [['sum', 'soma'], ['mean', 'média'], ['median', 'mediana'], ['min', 'mín'], ['max', 'máx'], ['stdev', 'desvio']];
 
 function renderCalc() {
   const c = state.answer?.calc;
-  $('calc').hidden = !c;
-  $('calc').textContent = c ? `Cálculo: ${c.expr} = ${c.value.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}` : '';
+  const box = $('calc');
+  box.hidden = !c;
+  box.replaceChildren();
+  if (c) {
+    const part = (cls, text) => Object.assign(document.createElement('span'), { className: cls, textContent: text });
+    box.append(part('lbl', 'Cálculo:'), ' ', part('expr', c.expr), ' = ', part('val', c.value.toLocaleString('pt-BR', { maximumFractionDigits: 4 })));
+  }
+  syncView();
 }
 
 function renderStats() {
   const box = $('stats');
   box.replaceChildren();
+  syncView();
   if (!state.summary) return; // pergunta sem elemento fixado: não há dados a resumir
   if (state.summary.groups.length === 0) {
     box.textContent = 'Sem números aqui.';
     return;
   }
+  // Elemento fixado com um número só: o valor ao vivo (acima) já o mostra; repetir aqui é ruído.
+  const repetido = state.current?.source === 'pin' && !state.answer && state.summary.groups.every((g) => g.stats.n === 1);
+  if (repetido) return;
   for (const { name, stats } of state.summary.groups) {
+    const group = document.createElement('div');
+    group.className = 'group';
     const h = document.createElement('h3');
     h.textContent = name;
-    const table = document.createElement('table');
-    for (const [key, label] of LABELS) addRow(table, label, fmt(stats[key]));
-    addRow(table, 'outliers', stats.outliers.length ? stats.outliers.map(fmt).join('; ') : '—');
-    box.append(h, table);
+    h.append(Object.assign(document.createElement('span'), { textContent: `${stats.n} ${stats.n === 1 ? 'valor' : 'valores'}` }));
+    group.append(h);
+    if (stats.n === 1) {
+      group.append(Object.assign(document.createElement('div'), { className: 'single', textContent: fmt(stats.sum) }));
+    } else {
+      const dl = document.createElement('dl');
+      for (const [key, label] of METRICS) {
+        const cell = document.createElement('div');
+        cell.append(Object.assign(document.createElement('dt'), { textContent: label }), Object.assign(document.createElement('dd'), { textContent: fmt(stats[key]) }));
+        dl.append(cell);
+      }
+      group.append(dl);
+    }
+    if (stats.outliers.length) {
+      group.append(Object.assign(document.createElement('p'), { className: 'outliers', textContent: `Fora do padrão: ${stats.outliers.map(fmt).join('; ')}` }));
+    }
+    box.append(group);
   }
 }
 
@@ -340,6 +464,7 @@ function sparkPoints(values, w, h) {
 
 function renderLive() {
   $('live').hidden = state.history.length === 0;
+  syncView();
   if ($('live').hidden) return;
   $('live-value').textContent = fmt(state.history.at(-1));
   const d = state.liveDelta;
@@ -352,7 +477,10 @@ function renderLive() {
     el.textContent = `${sign}${fmt(d.abs)}` + (d.pct === null ? '' : ` (${sign}${fmt(d.pct)}%)`);
     el.className = d.abs > 0 ? 'up' : d.abs < 0 ? 'down' : '';
   }
-  $('spark').setAttribute('points', sparkPoints(state.history, 280, 40));
+  const pts = sparkPoints(state.history, 280, 40);
+  $('spark').setAttribute('points', pts);
+  $('spark-area').setAttribute('points', `${pts} 280,44 0,44`);
 }
 
+syncView();
 refreshPinState();

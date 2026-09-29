@@ -39,6 +39,7 @@ sudo systemctl restart ollama
 - Clique no ícone do Live Lens para abrir o painel lateral.
 - **Selecione** texto ou células de uma tabela: as estatísticas aparecem na hora e a análise do LLM vem logo abaixo.
 - **Fixar elemento:** clique no botão, passe o mouse na página e clique no elemento (Esc cancela). Clicar numa célula fixa a **tabela inteira**; **Shift+clique** fixa exatamente o elemento sob o mouse (ex.: um KPI dentro de uma célula). O painel acompanha as mudanças, mostra variação e sparkline, e reanalisa com o LLM no máximo a cada 15s (contados a partir do fim da análise anterior). Uma seleção sua tem prioridade na tela: o elemento fixado continua atualizando a variação e o gráfico, mas não troca a seleção que você está lendo até você fixar de novo.
+- **Soltar:** o **×** ao lado do nome do elemento fixado. Enquanto há algo fixado, o botão de fixar vira **Trocar**.
 - **Pausar LLM:** fica só com as estatísticas.
 - **Pergunta:** digite no campo de baixo e aperte Enter. Ela é respondida sobre a seleção atual (ou o elemento fixado); sem nenhum dos dois, responde como pergunta geral.
 - **Selecionar uma pergunta** (ex.: "Quanto é 15% de R$ 1.234,56?" ou "Qual produto tem a maior receita?"): o painel entra no modo **Pergunta**.
@@ -47,7 +48,7 @@ sudo systemctl restart ollama
   - Se você seleciona **dados e a pergunta juntos** (ex.: uma tabela mais uma linha "Qual cliente mora em Natal?"), a pergunta é separada e o resto da seleção vira os dados.
   - Pergunta que os dados não cobrem é respondida com o conhecimento geral do modelo, avisando "Isto não está nos dados:". Sem nenhum dado, responde normalmente.
   - Fixar outro elemento ou selecionar um texto comum volta ao modo análise.
-- **Modelo:** troque no campo "Modelo" (precisa de `ollama pull <modelo>` antes).
+- **Modelo:** abra as configurações (ícone de controles no canto superior direito do painel) e troque o "Modelo do Ollama" (precisa de `ollama pull <modelo>` antes).
 
 ## Limitações conhecidas
 
